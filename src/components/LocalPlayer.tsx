@@ -1,0 +1,854 @@
+import React, { useRef, useEffect } from 'react';
+import { useGameStore, liveInput, triggerAttackEvent } from '../store';
+import { CLASS_STATS, getGroundHeight } from '../types';
+import { useFrame, useThree } from '@react-three/fiber';
+import {
+  Vector3,
+  Group,
+  MathUtils,
+  CapsuleGeometry,
+  BoxGeometry,
+  CylinderGeometry,
+  SphereGeometry,
+  PlaneGeometry,
+  RingGeometry,
+  MeshStandardMaterial,
+  MeshBasicMaterial,
+} from 'three';
+
+const TICK_RATE = 1 / 20; // 20 times per second
+
+// ----------------------------------------------------------------------------
+// STATIC SINGLETON GEOMETRIES & MATERIALS FOR LOCAL PLAYER
+// ----------------------------------------------------------------------------
+const localBodyGeo = new CapsuleGeometry(0.5, 1, 4, 8);
+const localVisorGeo = new BoxGeometry(0.6, 0.2, 0.2);
+const localVisorMat = new MeshStandardMaterial({ color: '#111827', roughness: 0.2 });
+
+const localBodyMats: Record<string, MeshStandardMaterial> = {
+  '#ef4444': new MeshStandardMaterial({ color: '#ef4444', roughness: 0.4, metalness: 0.2 }),
+  '#f59e0b': new MeshStandardMaterial({ color: '#f59e0b', roughness: 0.4, metalness: 0.2 }),
+  '#10b981': new MeshStandardMaterial({ color: '#10b981', roughness: 0.4, metalness: 0.2 }),
+  '#38bdf8': new MeshStandardMaterial({ color: '#38bdf8', roughness: 0.4, metalness: 0.2 }),
+};
+const defaultLocalBodyMat = localBodyMats['#ef4444'];
+
+const localGliderWingGeo = new BoxGeometry(3.2, 0.08, 1.4);
+const localGliderWingMats: Record<string, MeshStandardMaterial> = {
+  '#ef4444': new MeshStandardMaterial({ color: '#ef4444', roughness: 0.3, metalness: 0.4 }),
+  '#f59e0b': new MeshStandardMaterial({ color: '#f59e0b', roughness: 0.3, metalness: 0.4 }),
+  '#10b981': new MeshStandardMaterial({ color: '#10b981', roughness: 0.3, metalness: 0.4 }),
+  '#38bdf8': new MeshStandardMaterial({ color: '#38bdf8', roughness: 0.3, metalness: 0.4 }),
+};
+const defaultLocalGliderWingMat = localGliderWingMats['#ef4444'];
+
+const localGliderTipGeo = new BoxGeometry(0.6, 0.06, 1.3);
+const localGliderTipMat = new MeshStandardMaterial({ color: '#0f172a' });
+const localGliderStrutGeo = new CylinderGeometry(0.04, 0.04, 1.2, 6);
+const localGliderStrutMat = new MeshStandardMaterial({ color: '#334155', metalness: 0.8 });
+const localGliderBarGeo = new CylinderGeometry(0.04, 0.04, 1.0, 6);
+const localGliderBarMat = new MeshStandardMaterial({ color: '#f59e0b' });
+const localGliderJetGeo = new CylinderGeometry(0.08, 0.08, 0.3, 6);
+const localGliderJetMat = new MeshStandardMaterial({ color: '#1e293b' });
+
+const localSwordHiltGeo = new CylinderGeometry(0.04, 0.04, 0.35, 6);
+const localSwordHiltMat = new MeshStandardMaterial({ color: '#0f172a', roughness: 0.6 });
+const localSwordGuardGeo = new CylinderGeometry(0.14, 0.14, 0.03, 8);
+const localSwordGuardMat = new MeshStandardMaterial({ color: '#f59e0b', metalness: 0.8, roughness: 0.3 });
+const localSwordBladeGeo = new BoxGeometry(0.05, 1.7, 0.02);
+const localSwordBladeMat = new MeshStandardMaterial({ color: '#f1f5f9', metalness: 0.9, roughness: 0.1 });
+const localSwordEdgeGeo = new BoxGeometry(0.015, 1.72, 0.025);
+const localSwordEdgeMat = new MeshBasicMaterial({ color: '#ef4444' });
+
+const localGunBodyGeo = new BoxGeometry(0.14, 0.22, 0.55);
+const localGunBodyMat = new MeshStandardMaterial({ color: '#1e293b', metalness: 0.5, roughness: 0.4 });
+const localGunBarrelGeo = new CylinderGeometry(0.05, 0.05, 0.45, 6);
+const localGunBarrelMat = new MeshStandardMaterial({ color: '#475569', metalness: 0.8, roughness: 0.2 });
+const localGunAccentGeo = new BoxGeometry(0.08, 0.04, 0.35);
+
+const localGunAccentMats: Record<string, MeshBasicMaterial> = {
+  '#ef4444': new MeshBasicMaterial({ color: '#ef4444' }),
+  '#f59e0b': new MeshBasicMaterial({ color: '#f59e0b' }),
+  '#10b981': new MeshBasicMaterial({ color: '#10b981' }),
+  '#38bdf8': new MeshBasicMaterial({ color: '#38bdf8' }),
+};
+const defaultLocalGunAccentMat = localGunAccentMats['#ef4444'];
+
+// Hitbox indicators
+const swordAreaGeo = new RingGeometry(0.4, 15, 24, 1, -Math.PI / 3, (2 * Math.PI) / 3);
+const swordAreaMat = new MeshBasicMaterial({ color: '#f87171', transparent: true, opacity: 0.12, depthWrite: false, side: 2 });
+const swordEdgeArcGeo = new RingGeometry(14.6, 15.0, 24, 1, -Math.PI / 3, (2 * Math.PI) / 3);
+const swordEdgeArcMat = new MeshBasicMaterial({ color: '#ef4444', transparent: true, opacity: 0.55, depthWrite: false, side: 2 });
+const gunSightGeo = new PlaneGeometry(0.12, 80);
+const gunSightMat = new MeshBasicMaterial({ color: '#38bdf8', transparent: true, opacity: 0.3, depthWrite: false, side: 2 });
+const gunSightRingGeo = new RingGeometry(1.5, 1.8, 12);
+const gunSightRingMat = new MeshBasicMaterial({ color: '#38bdf8', transparent: true, opacity: 0.45, depthWrite: false, side: 2 });
+
+const shieldGeo = new SphereGeometry(1.5, 8, 8);
+const shieldMat = new MeshStandardMaterial({ color: '#fbbf24', transparent: true, opacity: 0.3, emissive: '#fbbf24', emissiveIntensity: 0.5 });
+const invulnGeo = new CylinderGeometry(1, 1, 2.5, 8);
+const invulnMat = new MeshStandardMaterial({ color: '#ef4444', transparent: true, opacity: 0.4, emissive: '#ef4444', emissiveIntensity: 1 });
+const healGeo = new CylinderGeometry(0.8, 0.8, 2, 8);
+const healMat = new MeshStandardMaterial({ color: '#22c55e', transparent: true, opacity: 0.3, emissive: '#22c55e', emissiveIntensity: 0.8 });
+
+export function LocalPlayer() {
+  const myId = useGameStore((s) => s.myId);
+  const gameState = useGameStore((s) => s.gameState);
+  const sendInput = useGameStore((s) => s.sendInput);
+  
+  const playerRef = useRef<Group>(null);
+  const innerMeshRef = useRef<Group>(null);
+  const weaponRef = useRef<Group>(null);
+  const { camera } = useThree();
+  const lastSend = useRef(0);
+  const lastLocalShoot = useRef(0);
+  const attackAnimTime = useRef(-10);
+  const rollStartTime = useRef(-10);
+  const rollDir = useRef({ x: 0, z: -1 });
+  const fallVelocity = useRef(0);
+  const autoDeployedRef = useRef(false);
+
+  // Smooth camera state
+  const camPos = useRef(new Vector3(0, 5, 10));
+  const lookTarget = useRef(new Vector3(0, 1.5, 0));
+  const camWorldDir = useRef(new Vector3());
+
+  const isDead = useGameStore((s) => {
+    const p = s.myId && s.gameState ? s.gameState.players[s.myId] : null;
+    return p ? p.isDead : true;
+  });
+  const characterClass = useGameStore((s) => {
+    const p = s.myId && s.gameState ? s.gameState.players[s.myId] : null;
+    return p ? p.characterClass : 'melee';
+  });
+  const inBus = useGameStore((s) => {
+    const p = s.myId && s.gameState ? s.gameState.players[s.myId] : null;
+    return p ? p.inBus : false;
+  });
+  const isGliding = useGameStore((s) => {
+    const p = s.myId && s.gameState ? s.gameState.players[s.myId] : null;
+    return p ? p.isGliding : false;
+  });
+  const isSkydiving = useGameStore((s) => {
+    const p = s.myId && s.gameState ? s.gameState.players[s.myId] : null;
+    return p ? p.isSkydiving : false;
+  });
+  const color = useGameStore((s) => {
+    const p = s.myId && s.gameState ? s.gameState.players[s.myId] : null;
+    return p ? p.color : 'blue';
+  });
+  const hasShield = useGameStore((s) => {
+    const p = s.myId && s.gameState ? s.gameState.players[s.myId] : null;
+    return p ? p.hasShield : false;
+  });
+  const isInvulnerable = useGameStore((s) => {
+    const p = s.myId && s.gameState ? s.gameState.players[s.myId] : null;
+    return p ? p.isInvulnerable : false;
+  });
+  const isHealing = useGameStore((s) => {
+    const p = s.myId && s.gameState ? s.gameState.players[s.myId] : null;
+    return p ? p.isHealing : false;
+  });
+
+  const spectateTargetId = useGameStore((s) => s.spectateTargetId);
+
+  useFrame((state, delta) => {
+    const gameState = useGameStore.getState().gameState;
+    const myPlayerFull = myId && gameState ? gameState.players[myId] : null;
+
+    const dt = Math.min(delta, 0.1);
+    const nowTime = state.clock.elapsedTime;
+
+    // If dead and spectating another player, smoothly follow target
+    if (!myPlayerFull || myPlayerFull.isDead) {
+      if (spectateTargetId && gameState?.players[spectateTargetId]) {
+        const target = gameState.players[spectateTargetId];
+        const camFollowSpeed = 1 - Math.exp(-14 * dt);
+        const idealCamX = target.x + Math.sin(target.ry) * 9;
+        const idealCamY = target.y + 4;
+        const idealCamZ = target.z + Math.cos(target.ry) * 9;
+
+        camPos.current.x = MathUtils.lerp(camPos.current.x, idealCamX, camFollowSpeed);
+        camPos.current.y = MathUtils.lerp(camPos.current.y, idealCamY, camFollowSpeed);
+        camPos.current.z = MathUtils.lerp(camPos.current.z, idealCamZ, camFollowSpeed);
+
+        lookTarget.current.x = MathUtils.lerp(lookTarget.current.x, target.x, camFollowSpeed);
+        lookTarget.current.y = MathUtils.lerp(lookTarget.current.y, target.y + 1.4, camFollowSpeed);
+        lookTarget.current.z = MathUtils.lerp(lookTarget.current.z, target.z, camFollowSpeed);
+
+        camera.position.copy(camPos.current);
+        camera.lookAt(lookTarget.current);
+      }
+      return;
+    }
+
+    if (!playerRef.current) return;
+
+    const yaw = liveInput.ry;
+    // Expanded vertical pitch range: -1.28 rad (looking high up ~74 deg) to +1.15 rad (looking down ~66 deg)
+    const pitch = Math.max(-1.28, Math.min(1.15, liveInput.pitch ?? 0.15));
+
+    // Rotate player root mesh to face look direction (yaw)
+    playerRef.current.rotation.y = yaw;
+
+    // If inside Battle Bus, follow the bus path cinematics and allow jumping
+    if (myPlayerFull.inBus && gameState?.battleBus) {
+      const bus = gameState.battleBus;
+      const busDx = bus.endX - bus.startX;
+      const busDz = bus.endZ - bus.startZ;
+      const busAngle = Math.atan2(busDx, busDz);
+
+      // Smooth camera follow without stutter
+      const camFollowSpeed = 1 - Math.exp(-10 * dt);
+      const idealCamX = bus.currentX - Math.sin(busAngle) * 28;
+      const idealCamY = bus.currentY + 12;
+      const idealCamZ = bus.currentZ - Math.cos(busAngle) * 28;
+
+      camPos.current.x = MathUtils.lerp(camPos.current.x, idealCamX, camFollowSpeed);
+      camPos.current.y = MathUtils.lerp(camPos.current.y, idealCamY, camFollowSpeed);
+      camPos.current.z = MathUtils.lerp(camPos.current.z, idealCamZ, camFollowSpeed);
+
+      lookTarget.current.x = MathUtils.lerp(lookTarget.current.x, bus.currentX + Math.sin(busAngle) * 15, camFollowSpeed);
+      lookTarget.current.y = MathUtils.lerp(lookTarget.current.y, bus.currentY - 2, camFollowSpeed);
+      lookTarget.current.z = MathUtils.lerp(lookTarget.current.z, bus.currentZ + Math.cos(busAngle) * 15, camFollowSpeed);
+
+      camera.position.copy(camPos.current);
+      camera.lookAt(lookTarget.current);
+
+      playerRef.current.position.set(bus.currentX, bus.currentY, bus.currentZ);
+      liveInput.x = bus.currentX;
+      liveInput.y = bus.currentY;
+      liveInput.z = bus.currentZ;
+
+      if (nowTime - lastSend.current > TICK_RATE) {
+        lastSend.current = nowTime;
+        sendInput();
+      }
+      return;
+    }
+
+    // --- SKYDIVING & GLIDER FLIGHT SIMULATION ---
+    if (myPlayerFull.isSkydiving || myPlayerFull.isGliding) {
+      const isGliding = !!myPlayerFull.isGliding;
+      const forwardSpeed = isGliding ? 26 : 18;
+      const fallSpeed = isGliding ? 12 : 38;
+
+      // Pitch and Yaw steering
+      const joyX = liveInput.moveX;
+      const joyY = liveInput.moveY;
+      
+      let moveDirX = -Math.sin(yaw);
+      let moveDirZ = -Math.cos(yaw);
+
+      if (Math.abs(joyX) > 0.01 || Math.abs(joyY) > 0.01) {
+        moveDirX = Math.sin(yaw) * joyY + Math.cos(yaw) * joyX;
+        moveDirZ = Math.cos(yaw) * joyY - Math.sin(yaw) * joyX;
+        const mag = Math.hypot(moveDirX, moveDirZ);
+        if (mag > 0.01) {
+          moveDirX /= mag;
+          moveDirZ /= mag;
+        }
+      }
+
+      playerRef.current.position.x = MathUtils.clamp(playerRef.current.position.x + moveDirX * forwardSpeed * dt, -195, 195);
+      playerRef.current.position.z = MathUtils.clamp(playerRef.current.position.z + moveDirZ * forwardSpeed * dt, -195, 195);
+      playerRef.current.position.y -= fallSpeed * dt;
+
+      const groundH = gameState?.obstacles ? getGroundHeight(playerRef.current.position.x, playerRef.current.position.z, gameState.obstacles) : 0;
+      
+      // Auto-deploy glider ONCE near ground if skydiving
+      if (inBus || playerRef.current.position.y <= groundH + 1.2) {
+        autoDeployedRef.current = false;
+      }
+      if (!autoDeployedRef.current && isSkydiving && playerRef.current.position.y < groundH + 12) {
+        autoDeployedRef.current = true;
+        liveInput.toggleGlider = true;
+      }
+
+      // Smooth landing check - prevent falling below terrain
+      if (playerRef.current.position.y <= groundH + 1.0) {
+        playerRef.current.position.y = groundH + 1.0;
+        fallVelocity.current = 0;
+        // Instantly transmit ground contact to server
+        liveInput.x = playerRef.current.position.x;
+        liveInput.y = groundH + 1.0;
+        liveInput.z = playerRef.current.position.z;
+        sendInput();
+      }
+
+      // Tilt body forwards when skydiving
+      if (innerMeshRef.current) {
+        innerMeshRef.current.rotation.x = isGliding ? 0.2 : 1.1;
+      }
+
+      // Skydiving third person camera
+      const camDist = isGliding ? 9.5 : 8.0;
+      const camHeight = isGliding ? 4.5 : 5.0;
+      const camFollowSpeed = 1 - Math.exp(-16 * dt);
+
+      const idealCamX = playerRef.current.position.x + Math.sin(yaw) * camDist;
+      const idealCamY = playerRef.current.position.y + camHeight;
+      const idealCamZ = playerRef.current.position.z + Math.cos(yaw) * camDist;
+
+      camPos.current.x = MathUtils.lerp(camPos.current.x, idealCamX, camFollowSpeed);
+      camPos.current.y = MathUtils.lerp(camPos.current.y, idealCamY, camFollowSpeed);
+      camPos.current.z = MathUtils.lerp(camPos.current.z, idealCamZ, camFollowSpeed);
+
+      lookTarget.current.x = MathUtils.lerp(lookTarget.current.x, playerRef.current.position.x - Math.sin(yaw) * 15, camFollowSpeed);
+      lookTarget.current.y = MathUtils.lerp(lookTarget.current.y, playerRef.current.position.y - (isGliding ? 2 : 6), camFollowSpeed);
+      lookTarget.current.z = MathUtils.lerp(lookTarget.current.z, playerRef.current.position.z - Math.cos(yaw) * 15, camFollowSpeed);
+
+      camera.position.copy(camPos.current);
+      camera.lookAt(lookTarget.current);
+
+      liveInput.x = playerRef.current.position.x;
+      liveInput.y = playerRef.current.position.y;
+      liveInput.z = playerRef.current.position.z;
+
+      if (nowTime - lastSend.current > TICK_RATE) {
+        lastSend.current = nowTime;
+        sendInput();
+        liveInput.toggleGlider = false;
+        liveInput.jumpFromBus = false;
+      }
+      return;
+    }
+
+    // --- NORMAL GROUND COMBAT MOVEMENT ---
+    // Movement calculation
+    const joyX = liveInput.moveX;
+    const joyY = liveInput.moveY;
+
+    let mx = 0;
+    let mz = 0;
+
+    if (Math.abs(joyX) > 0.01 || Math.abs(joyY) > 0.01) {
+      mx = Math.sin(yaw) * joyY + Math.cos(yaw) * joyX;
+      mz = Math.cos(yaw) * joyY - Math.sin(yaw) * joyX;
+
+      const mag = Math.hypot(mx, mz);
+      if (mag > 1) {
+        mx /= mag;
+        mz /= mag;
+      }
+    }
+
+    // --- DODGE ROLL MECHANIC ---
+    const timeSinceRoll = nowTime - rollStartTime.current;
+    const isRolling = timeSinceRoll < 0.35;
+
+    if (liveInput.isRolling && timeSinceRoll > 1.8) {
+      rollStartTime.current = nowTime;
+      // Determine roll direction: current moving direction or forward facing
+      if (Math.hypot(mx, mz) > 0.1) {
+        const mag = Math.hypot(mx, mz);
+        rollDir.current = { x: mx / mag, z: mz / mag };
+      } else {
+        rollDir.current = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+      }
+    }
+
+    // Base speed
+    let baseSpeed = myPlayerFull.characterClass === 'scout' ? 22 : myPlayerFull.characterClass === 'tank' ? 10 : 15;
+    if (isRolling) {
+      baseSpeed *= 2.4; // 240% speed boost during dodge roll
+    }
+
+    const moveVectorX = isRolling ? rollDir.current.x : mx;
+    const moveVectorZ = isRolling ? rollDir.current.z : mz;
+
+    // 3D Somersault flip animation during roll
+    if (innerMeshRef.current) {
+      if (isRolling) {
+        const rollProgress = timeSinceRoll / 0.35;
+        innerMeshRef.current.rotation.x = -rollProgress * Math.PI * 2;
+      } else {
+        innerMeshRef.current.rotation.x = MathUtils.lerp(innerMeshRef.current.rotation.x, 0, 1 - Math.exp(-20 * dt));
+      }
+    }
+
+    const PLAYER_RADIUS = 0.9;
+    const currentX = playerRef.current.position.x;
+    const currentY = playerRef.current.position.y;
+    const currentZ = playerRef.current.position.z;
+    const currentFootY = currentY - 1.0;
+
+    // 1. Move along X axis and slide smoothly along obstacles
+    let moveX = moveVectorX * baseSpeed * dt;
+    let testX = currentX + moveX;
+
+    if (gameState?.obstacles && Math.abs(moveX) > 0.0001) {
+      const targetGroundX = getGroundHeight(testX, currentZ, gameState.obstacles);
+      for (const obs of Object.values(gameState.obstacles)) {
+        if (obs.type === 'ramp') continue;
+
+        // If target ground height climbs onto this obstacle or if foot is already at/near top (within 2.2m climbable step)
+        if (targetGroundX >= obs.height - 0.2 || currentFootY >= obs.height - 2.2) {
+          continue;
+        }
+
+        // Fast proximity rejection
+        if (Math.abs(testX - obs.x) > (obs.width / 2 + PLAYER_RADIUS + 2) || Math.abs(currentZ - obs.z) > (obs.depth / 2 + PLAYER_RADIUS + 2)) {
+          continue;
+        }
+
+        const obsMinX = obs.x - obs.width / 2 - PLAYER_RADIUS;
+        const obsMaxX = obs.x + obs.width / 2 + PLAYER_RADIUS;
+        const obsMinZ = obs.z - obs.depth / 2 - PLAYER_RADIUS;
+        const obsMaxZ = obs.z + obs.depth / 2 + PLAYER_RADIUS;
+
+        if (testX > obsMinX && testX < obsMaxX && currentZ > obsMinZ && currentZ < obsMaxZ) {
+          // If moving outward away from obstacle (stepping off cliff/ledge), allow smooth descent
+          if (moveX > 0 && currentX >= obs.x + obs.width / 2) {
+            continue;
+          }
+          if (moveX < 0 && currentX <= obs.x - obs.width / 2) {
+            continue;
+          }
+
+          // Slide along wall by stopping X movement
+          if (moveX > 0) {
+            testX = obsMinX;
+          } else {
+            testX = obsMaxX;
+          }
+        }
+      }
+    }
+
+    // 2. Move along Z axis and slide smoothly along obstacles
+    let moveZ = moveVectorZ * baseSpeed * dt;
+    let testZ = currentZ + moveZ;
+
+    if (gameState?.obstacles && Math.abs(moveZ) > 0.0001) {
+      const targetGroundZ = getGroundHeight(testX, testZ, gameState.obstacles);
+      for (const obs of Object.values(gameState.obstacles)) {
+        if (obs.type === 'ramp') continue;
+
+        // If target ground height climbs onto this obstacle or if foot is already at/near top (within 2.2m climbable step)
+        if (targetGroundZ >= obs.height - 0.2 || currentFootY >= obs.height - 2.2) {
+          continue;
+        }
+
+        if (Math.abs(testX - obs.x) > (obs.width / 2 + PLAYER_RADIUS + 2) || Math.abs(testZ - obs.z) > (obs.depth / 2 + PLAYER_RADIUS + 2)) {
+          continue;
+        }
+
+        const obsMinX = obs.x - obs.width / 2 - PLAYER_RADIUS;
+        const obsMaxX = obs.x + obs.width / 2 + PLAYER_RADIUS;
+        const obsMinZ = obs.z - obs.depth / 2 - PLAYER_RADIUS;
+        const obsMaxZ = obs.z + obs.depth / 2 + PLAYER_RADIUS;
+
+        if (testX > obsMinX && testX < obsMaxX && testZ > obsMinZ && testZ < obsMaxZ) {
+          // If moving outward away from obstacle (stepping off cliff/ledge), allow smooth descent
+          if (moveZ > 0 && currentZ >= obs.z + obs.depth / 2) {
+            continue;
+          }
+          if (moveZ < 0 && currentZ <= obs.z - obs.depth / 2) {
+            continue;
+          }
+
+          // Slide along wall by stopping Z movement
+          if (moveZ > 0) {
+            testZ = obsMinZ;
+          } else {
+            testZ = obsMaxZ;
+          }
+        }
+      }
+    }
+
+    // 3. Safety anti-stuck de-penetration pass
+    if (gameState?.obstacles) {
+      const targetGroundFinal = getGroundHeight(testX, testZ, gameState.obstacles);
+      for (const obs of Object.values(gameState.obstacles)) {
+        if (obs.type === 'ramp') continue;
+        if (targetGroundFinal >= obs.height - 0.2 || currentFootY >= obs.height - 2.2) continue;
+
+        const obsMinX = obs.x - obs.width / 2 - PLAYER_RADIUS;
+        const obsMaxX = obs.x + obs.width / 2 + PLAYER_RADIUS;
+        const obsMinZ = obs.z - obs.depth / 2 - PLAYER_RADIUS;
+        const obsMaxZ = obs.z + obs.depth / 2 + PLAYER_RADIUS;
+
+        if (testX > obsMinX && testX < obsMaxX && testZ > obsMinZ && testZ < obsMaxZ) {
+          const distLeft = testX - obsMinX;
+          const distRight = obsMaxX - testX;
+          const distTop = testZ - obsMinZ;
+          const distBottom = obsMaxZ - testZ;
+          const min = Math.min(distLeft, distRight, distTop, distBottom);
+
+          if (min === distLeft) testX = obsMinX;
+          else if (min === distRight) testX = obsMaxX;
+          else if (min === distTop) testZ = obsMinZ;
+          else if (min === distBottom) testZ = obsMaxZ;
+        }
+      }
+    }
+
+    // Bounds check
+    playerRef.current.position.x = MathUtils.clamp(testX, -195, 195);
+    playerRef.current.position.z = MathUtils.clamp(testZ, -195, 195);
+
+    // Dynamic ground and slope response with smooth step-up
+    const groundH = gameState?.obstacles ? getGroundHeight(playerRef.current.position.x, playerRef.current.position.z, gameState.obstacles) : 0;
+    const targetY = myPlayerFull.isFlying ? groundH + 12 : groundH + 1;
+
+    if (myPlayerFull.isFlying) {
+      playerRef.current.position.y = MathUtils.lerp(playerRef.current.position.y, targetY, 1 - Math.exp(-12 * dt));
+      fallVelocity.current = 0;
+    } else if (playerRef.current.position.y < targetY) {
+      // Smoothly and swiftly walk up ramps, stairs, and rooftop seams
+      playerRef.current.position.y = MathUtils.lerp(playerRef.current.position.y, targetY, 1 - Math.exp(-35 * dt));
+      if (Math.abs(playerRef.current.position.y - targetY) < 0.05) {
+        playerRef.current.position.y = targetY;
+      }
+      fallVelocity.current = 0;
+    } else if (Math.abs(playerRef.current.position.y - targetY) < 0.1) {
+      playerRef.current.position.y = targetY;
+      fallVelocity.current = 0;
+    } else {
+      // Smooth, solid gravity fall when stepping off high ledges / cliffs (no stuttering)
+      fallVelocity.current -= 45 * dt;
+      playerRef.current.position.y += fallVelocity.current * dt;
+      if (playerRef.current.position.y <= targetY) {
+        playerRef.current.position.y = targetY;
+        fallVelocity.current = 0;
+      }
+    }
+
+    // Update live input coordinates directly
+    liveInput.x = playerRef.current.position.x;
+    liveInput.y = playerRef.current.position.y;
+    liveInput.z = playerRef.current.position.z;
+
+    const px = playerRef.current.position.x;
+    const py = playerRef.current.position.y;
+    const pz = playerRef.current.position.z;
+
+    // --- DIRECT, ULTRA-SMOOTH THIRD-PERSON CAMERA & 3D FOCAL RAY ---
+    const isZoomed = liveInput.isZoomed;
+    const targetFov = isZoomed ? (myPlayerFull.characterClass === 'scout' ? 32 : 38) : 75;
+    const fovLerp = 1 - Math.exp(-16 * dt);
+    
+    // Typecast PerspectiveCamera for FOV manipulation
+    const pCam = camera as any;
+    if (pCam.fov !== undefined && Math.abs(pCam.fov - targetFov) > 0.1) {
+      pCam.fov = MathUtils.lerp(pCam.fov, targetFov, fovLerp);
+      pCam.updateProjectionMatrix();
+    }
+
+    const baseCamDist = isZoomed ? 4.8 : 9.0;
+    const baseCamHeight = isZoomed ? 2.3 : 3.2;
+
+    const hDist = baseCamDist * Math.cos(pitch);
+    const vDist = baseCamDist * Math.sin(pitch) + baseCamHeight;
+
+    // Tactical shoulder offset when zoomed
+    const shoulderOffset = isZoomed ? 0.65 : 0;
+    const offX = Math.cos(yaw) * shoulderOffset;
+    const offZ = -Math.sin(yaw) * shoulderOffset;
+
+    const camX = px + Math.sin(yaw) * hDist + offX;
+    const camY = Math.max(py + 0.4, py + vDist);
+    const camZ = pz + Math.cos(yaw) * hDist + offZ;
+
+    // Focus target dynamically angles with pitch so player can look high into the sky and directly hit high platforms/flying enemies
+    const lookDistance = 50.0;
+    const targetLookX = px - Math.sin(yaw) * Math.cos(-pitch) * lookDistance;
+    const targetLookY = py + 1.2 + Math.sin(-pitch) * lookDistance;
+    const targetLookZ = pz - Math.cos(yaw) * Math.cos(-pitch) * lookDistance;
+
+    camera.position.set(camX, camY, camZ);
+    camera.lookAt(targetLookX, targetLookY, targetLookZ);
+
+    // Exact 3D ray through screen center (Crosshair direction / 画面中心レティクル視線)
+    camera.getWorldDirection(camWorldDir.current);
+    const normAimX = camWorldDir.current.x;
+    const normAimY = camWorldDir.current.y;
+    const normAimZ = camWorldDir.current.z;
+
+    // --- ACCURATE RETICLE RAYCAST (敵・障害物・地面へのクロスヘア交差判定) ---
+    let closestT = 60.0; // Default focal distance if aiming into open air
+    let rayHitEnemy = false;
+
+    // 1. Raycast against all other alive players/bots
+    if (gameState?.players) {
+      for (const otherId in gameState.players) {
+        if (otherId === myId) continue;
+        const other = gameState.players[otherId];
+        if (other.isDead) continue;
+
+        // Player capsule/sphere center in world space
+        const targetCenterX = other.x;
+        const targetCenterY = (other.y || 1) + 1.0;
+        const targetCenterZ = other.z;
+
+        // Vector from camera to target
+        const vcx = targetCenterX - camX;
+        const vcy = targetCenterY - camY;
+        const vcz = targetCenterZ - camZ;
+
+        // Project onto camera aim ray
+        const t = vcx * normAimX + vcy * normAimY + vcz * normAimZ;
+        if (t > 1.5 && t < closestT + 5.0) {
+          // Closest point on ray to target
+          const rayPointX = camX + normAimX * t;
+          const rayPointY = camY + normAimY * t;
+          const rayPointZ = camZ + normAimZ * t;
+
+          // Distance from ray to target center
+          const distToTarget = Math.hypot(targetCenterX - rayPointX, targetCenterY - rayPointY, targetCenterZ - rayPointZ);
+          const TARGET_HIT_RADIUS = 1.6; // generous target hit radius for smooth feel
+
+          if (distToTarget <= TARGET_HIT_RADIUS) {
+            const hitT = Math.max(1.0, t - Math.sqrt(Math.max(0, TARGET_HIT_RADIUS * TARGET_HIT_RADIUS - distToTarget * distToTarget)));
+            if (hitT < closestT) {
+              closestT = hitT;
+              rayHitEnemy = true;
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Raycast against obstacles if no enemy was hit closer
+    if (!rayHitEnemy && gameState?.obstacles) {
+      for (const obs of Object.values(gameState.obstacles)) {
+        if (obs.type === 'ramp') continue;
+        const halfW = obs.width / 2;
+        const halfD = obs.depth / 2;
+        const minX = obs.x - halfW;
+        const maxX = obs.x + halfW;
+        const minY = 0;
+        const maxY = obs.height;
+        const minZ = obs.z - halfD;
+        const maxZ = obs.z + halfD;
+
+        // Fast 3D AABB Slab intersection
+        let t1x = (minX - camX) / (normAimX || 1e-6);
+        let t2x = (maxX - camX) / (normAimX || 1e-6);
+        let t1y = (minY - camY) / (normAimY || 1e-6);
+        let t2y = (maxY - camY) / (normAimY || 1e-6);
+        let t1z = (minZ - camZ) / (normAimZ || 1e-6);
+        let t2z = (maxZ - camZ) / (normAimZ || 1e-6);
+
+        let tmin = Math.max(Math.max(Math.min(t1x, t2x), Math.min(t1y, t2y)), Math.min(t1z, t2z));
+        let tmax = Math.min(Math.min(Math.max(t1x, t2x), Math.max(t1y, t2y)), Math.max(t1z, t2z));
+
+        if (tmax >= Math.max(0, tmin) && tmin > 1.0 && tmin < closestT) {
+          closestT = tmin;
+        }
+      }
+    }
+
+    // 3. Ground intersection
+    if (normAimY < -0.01) {
+      const tGround = (0 - camY) / normAimY;
+      if (tGround > 1.0 && tGround < closestT) {
+        closestT = tGround;
+      }
+    }
+
+    // 3D Focal Aim Target in world space (where the crosshair is exactly aimed at)
+    const focalX = camX + normAimX * closestT;
+    const focalY = camY + normAimY * closestT;
+    const focalZ = camZ + normAimZ * closestT;
+
+    liveInput.aimTarget = { x: focalX, y: focalY, z: focalZ };
+    liveInput.pitch = pitch;
+    liveInput.isTargetLocked = rayHitEnemy;
+
+    // Gun muzzle spawn point (weapon position)
+    const muzzleX = px - Math.sin(yaw) * 0.5 + Math.cos(yaw) * 0.4;
+    const muzzleY = py + 1.0;
+    const muzzleZ = pz - Math.cos(yaw) * 0.5 - Math.sin(yaw) * 0.4;
+
+    // Direct trajectory from muzzle straight towards the 3D 焦点 (crosshair focal point):
+    const bVecX = focalX - muzzleX;
+    const bVecY = focalY - muzzleY;
+    const bVecZ = focalZ - muzzleZ;
+    const bVecLen = Math.hypot(bVecX, bVecY, bVecZ) || 1;
+    const bulletDirX = bVecX / bVecLen;
+    const bulletDirY = bVecY / bVecLen;
+    const bulletDirZ = bVecZ / bVecLen;
+
+    // --- INSTANT CLIENT ATTACK TRIGGER & PREDICTION ---
+    const stats = CLASS_STATS[myPlayerFull.characterClass];
+    const isSword = myPlayerFull.characterClass === 'sword';
+    const cooldownSec = Math.max(50, stats.cooldown - myPlayerFull.weaponLevel * 30) / 1000;
+
+    if (liveInput.isShooting && !myPlayerFull.isFlying && state.clock.elapsedTime - lastLocalShoot.current > cooldownSec) {
+      lastLocalShoot.current = state.clock.elapsedTime;
+      attackAnimTime.current = state.clock.elapsedTime;
+
+      // Instantly trigger attack visual effect locally straight to the 焦点 (focal crosshair point)
+      triggerAttackEvent({
+        id: 'local_' + Math.random().toString(36).substring(2),
+        attackerId: myPlayerFull.id,
+        characterClass: myPlayerFull.characterClass,
+        x: isSword ? px : muzzleX,
+        y: isSword ? py + 0.6 : muzzleY,
+        z: isSword ? pz : muzzleZ,
+        ry: yaw,
+        dirX: bulletDirX,
+        dirY: bulletDirY,
+        dirZ: bulletDirZ,
+        targetPos: { x: focalX, y: focalY, z: focalZ },
+        weaponLevel: myPlayerFull.weaponLevel,
+        isSword,
+      });
+    }
+
+    // --- WEAPON SWING & RECOIL ANIMATION ---
+    if (weaponRef.current) {
+      const timeSinceAttack = state.clock.elapsedTime - attackAnimTime.current;
+      if (isSword) {
+        // Sword slash sweeping rotation
+        if (timeSinceAttack < 0.22) {
+          const progress = timeSinceAttack / 0.22;
+          const slashAngle = Math.sin(progress * Math.PI);
+          weaponRef.current.rotation.x = -0.5 - slashAngle * 1.8;
+          weaponRef.current.rotation.y = 0.4 + slashAngle * 1.4;
+          weaponRef.current.position.z = -0.4 - slashAngle * 0.5;
+        } else {
+          // Idle stance
+          weaponRef.current.rotation.x = MathUtils.lerp(weaponRef.current.rotation.x, -0.4, 1 - Math.exp(-15 * dt));
+          weaponRef.current.rotation.y = MathUtils.lerp(weaponRef.current.rotation.y, 0.2, 1 - Math.exp(-15 * dt));
+          weaponRef.current.position.z = MathUtils.lerp(weaponRef.current.position.z, -0.3, 1 - Math.exp(-15 * dt));
+        }
+      } else {
+        // Gun recoil kickback
+        if (timeSinceAttack < 0.12) {
+          const kick = Math.sin((timeSinceAttack / 0.12) * Math.PI) * 0.18;
+          weaponRef.current.position.z = -0.4 + kick;
+          weaponRef.current.rotation.x = -kick * 1.2;
+        } else {
+          weaponRef.current.position.z = MathUtils.lerp(weaponRef.current.position.z, -0.4, 1 - Math.exp(-15 * dt));
+          weaponRef.current.rotation.x = MathUtils.lerp(weaponRef.current.rotation.x, 0, 1 - Math.exp(-15 * dt));
+        }
+      }
+    }
+
+    // Network tick: send to server at 20Hz
+    if (state.clock.elapsedTime - lastSend.current > TICK_RATE) {
+      sendInput();
+      lastSend.current = state.clock.elapsedTime;
+    }
+  });
+
+  // Track initialization and respawn
+  const initializedRef = useRef(false);
+  const wasDeadRef = useRef(false);
+
+  useEffect(() => {
+    const gameState = useGameStore.getState().gameState;
+    const myId = useGameStore.getState().myId;
+    const myPlayer = myId && gameState ? gameState.players[myId] : null;
+
+    if (!myPlayer) return;
+
+    if (!initializedRef.current && playerRef.current) {
+      playerRef.current.position.set(myPlayer.x, myPlayer.y, myPlayer.z);
+      liveInput.x = myPlayer.x;
+      liveInput.y = myPlayer.y;
+      liveInput.z = myPlayer.z;
+      initializedRef.current = true;
+    }
+
+    // If just respawned from death, snap to respawn coordinate
+    if (wasDeadRef.current && !isDead && playerRef.current) {
+      playerRef.current.position.set(myPlayer.x, myPlayer.y, myPlayer.z);
+      liveInput.x = myPlayer.x;
+      liveInput.y = myPlayer.y;
+      liveInput.z = myPlayer.z;
+    }
+    wasDeadRef.current = !!isDead;
+  }, [isDead]);
+
+  if (isDead) return null;
+
+  const isSwordClass = characterClass === 'sword';
+  const bodyMat = localBodyMats[color] || defaultLocalBodyMat;
+  const gliderWingMat = localGliderWingMats[color] || defaultLocalGliderWingMat;
+  const weaponAccentMat = localGunAccentMats[color] || defaultLocalGunAccentMat;
+
+  return (
+    <group ref={playerRef} visible={!inBus}>
+      {/* Somersault Flipping Inner Body Group */}
+      <group ref={innerMeshRef}>
+        {/* Body */}
+        <mesh geometry={localBodyGeo} material={bodyMat} position={[0, 0, 0]} />
+        
+        {/* Eyes / Visor indicator */}
+        <mesh geometry={localVisorGeo} material={localVisorMat} position={[0, 0.5, -0.4]} />
+
+        {/* --- 3D DEPLOYED TACTICAL HANG GLIDER --- */}
+        {isGliding && (
+          <group position={[0, 1.6, -0.2]}>
+            <mesh geometry={localGliderWingGeo} material={gliderWingMat} />
+            <mesh geometry={localGliderTipGeo} material={localGliderTipMat} position={[1.7, 0.2, 0]} rotation={[0, 0, -0.3]} />
+            <mesh geometry={localGliderTipGeo} material={localGliderTipMat} position={[-1.7, 0.2, 0]} rotation={[0, 0, 0.3]} />
+            <mesh geometry={localGliderStrutGeo} material={localGliderStrutMat} position={[0, -0.6, 0]} />
+            <mesh geometry={localGliderBarGeo} material={localGliderBarMat} position={[0, -1.0, 0]} rotation={[0, 0, Math.PI / 2]} />
+            <mesh geometry={localGliderJetGeo} material={localGliderJetMat} position={[0.9, -0.1, 0.7]} rotation={[Math.PI / 2, 0, 0]} />
+            <mesh geometry={localGliderJetGeo} material={localGliderJetMat} position={[-0.9, -0.1, 0.7]} rotation={[Math.PI / 2, 0, 0]} />
+          </group>
+        )}
+
+        {/* --- VISIBLE 3D WEAPONS --- */}
+        {!isGliding && !isSkydiving && (
+          <group ref={weaponRef} position={[0.45, 0.1, -0.3]}>
+            {isSwordClass ? (
+              // Sleek Katana Blade Model
+              <group rotation={[-0.4, 0.2, -0.2]}>
+                <mesh geometry={localSwordHiltGeo} material={localSwordHiltMat} position={[0, -0.3, 0]} />
+                <mesh geometry={localSwordGuardGeo} material={localSwordGuardMat} position={[0, -0.1, 0]} />
+                <mesh geometry={localSwordBladeGeo} material={localSwordBladeMat} position={[0, 0.8, 0]} />
+                <mesh geometry={localSwordEdgeGeo} material={localSwordEdgeMat} position={[0.03, 0.8, 0]} />
+              </group>
+            ) : (
+              // Sci-Fi Blaster / Rifle Model
+              <group position={[0, 0, 0]}>
+                <mesh geometry={localGunBodyGeo} material={localGunBodyMat} position={[0, 0, 0]} />
+                <mesh geometry={localGunBarrelGeo} material={localGunBarrelMat} position={[0, 0.04, -0.45]} rotation={[Math.PI / 2, 0, 0]} />
+                <mesh geometry={localGunAccentGeo} material={weaponAccentMat} position={[0, 0.12, -0.05]} />
+              </group>
+            )}
+          </group>
+        )}
+      </group>
+
+      {/* --- HIGH-VISIBILITY ATTACK HITBOX & RANGE INDICATOR --- */}
+      {!isGliding && !isSkydiving && (
+        isSwordClass ? (
+          // SWORD ATTACK CONE (Exact 15m Range & 120° Arc on Ground)
+          <group position={[0, -0.98, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}>
+            <mesh geometry={swordAreaGeo} material={swordAreaMat} />
+            <mesh geometry={swordEdgeArcGeo} material={swordEdgeArcMat} position={[0, 0, 0.01]} />
+          </group>
+        ) : (
+          // GUN LASER SIGHT & RANGE BEAM (80m Straight Target Line on Ground)
+          <group position={[0, -0.98, 0]}>
+            <mesh geometry={gunSightGeo} material={gunSightMat} position={[0, 0, -40]} rotation={[-Math.PI / 2, 0, 0]} />
+            <mesh geometry={gunSightRingGeo} material={gunSightRingMat} position={[0, 0.01, -80]} rotation={[-Math.PI / 2, 0, 0]} />
+          </group>
+        )
+      )}
+
+      {/* Tank Shield Visual */}
+      {hasShield && (
+        <mesh geometry={shieldGeo} material={shieldMat} position={[0, 0, 0]} />
+      )}
+
+      {/* Sword Invulnerability Dash Visual */}
+      {isInvulnerable && (
+        <mesh geometry={invulnGeo} material={invulnMat} position={[0, 0, 0]} />
+      )}
+      
+      {/* Healing Visual */}
+      {isHealing && (
+        <mesh geometry={healGeo} material={healMat} position={[0, 0, 0]} />
+      )}
+    </group>
+  );
+}
