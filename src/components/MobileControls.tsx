@@ -114,10 +114,10 @@ export function MobileControls() {
   // Request Pointer Lock with full Safari/iPadOS WebKit compatibility
   const requestPointerLock = useCallback(() => {
     try {
-      const el = document.getElementById('root') || document.body || document.documentElement;
-      const req = el.requestPointerLock || (el as any).webkitRequestPointerLock || (el as any).mozRequestPointerLock || document.body.requestPointerLock;
-      if (req) {
-        const promise = req.call(el);
+      const canvas = document.querySelector('canvas') || document.getElementById('root') || document.body;
+      const req = canvas?.requestPointerLock || (canvas as any)?.webkitRequestPointerLock || (canvas as any)?.mozRequestPointerLock || document.body.requestPointerLock;
+      if (req && canvas) {
+        const promise = req.call(canvas);
         if (promise && typeof promise.catch === 'function') {
           promise.catch((err: any) => console.warn('Pointer lock error:', err));
         }
@@ -254,44 +254,51 @@ export function MobileControls() {
     };
 
     const handleMouseMove = (e: MouseEvent) => {
+      // Ignore if cursor is interacting with menu or dialog elements
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('[role="dialog"], #settings-modal, #minimap, select, input, textarea')) {
+        prevMousePos.current = { x: e.clientX, y: e.clientY };
+        return;
+      }
+
       const isLocked = !!(
         document.pointerLockElement ||
         (document as any).webkitPointerLockElement ||
         (document as any).mozPointerLockElement
       );
 
-      let dx = e.movementX ?? (e as any).webkitMovementX ?? (e as any).mozMovementX ?? 0;
-      let dy = e.movementY ?? (e as any).webkitMovementY ?? (e as any).mozMovementY ?? 0;
+      let dx = 0;
+      let dy = 0;
 
-      // Safari on iPadOS often returns 0 for movementX/Y in mousemove events.
-      // Use clientX / clientY delta fallback if movement is within reasonable threshold.
-      if (dx === 0 && dy === 0 && prevMousePos.current) {
-        const clientDx = e.clientX - prevMousePos.current.x;
-        const clientDy = e.clientY - prevMousePos.current.y;
-        if (Math.abs(clientDx) < 300 && Math.abs(clientDy) < 300) {
-          dx = clientDx;
-          dy = clientDy;
+      if (isLocked) {
+        dx = e.movementX ?? (e as any).webkitMovementX ?? (e as any).mozMovementX ?? 0;
+        dy = e.movementY ?? (e as any).webkitMovementY ?? (e as any).mozMovementY ?? 0;
+      } else {
+        // Unlocked mode (iPad trackpad/mouse or desktop cursor before pointer lock)
+        if (prevMousePos.current) {
+          const rawDx = e.clientX - prevMousePos.current.x;
+          const rawDy = e.clientY - prevMousePos.current.y;
+          if (Math.abs(rawDx) < 250 && Math.abs(rawDy) < 250) {
+            dx = rawDx;
+            dy = rawDy;
+          }
         }
       }
       prevMousePos.current = { x: e.clientX, y: e.clientY };
 
-      if (isLocked) {
-        // High-precision pointer lock look
-        const sensX = 0.0028 * mouseSensitivity;
-        const sensY = 0.0024 * mouseSensitivity;
-
-        liveInput.ry -= dx * sensX;
-        const currentPitch = liveInput.pitch ?? 0.15;
-        liveInput.pitch = Math.max(-1.28, Math.min(1.15, currentPitch + dy * sensY));
-      } else if (e.buttons > 0) {
-        // Fallback: If not pointer locked (or before user locks on iPad), dragging mouse rotates view
-        const sensX = 0.0038 * mouseSensitivity;
-        const sensY = 0.0032 * mouseSensitivity;
+      if (dx !== 0 || dy !== 0) {
+        const sensX = 0.0032 * mouseSensitivity;
+        const sensY = 0.0028 * mouseSensitivity;
 
         liveInput.ry -= dx * sensX;
         const currentPitch = liveInput.pitch ?? 0.15;
         liveInput.pitch = Math.max(-1.28, Math.min(1.15, currentPitch + dy * sensY));
       }
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      handleMouseMove(e as unknown as MouseEvent);
     };
 
     const handleMouseDown = (e: MouseEvent) => {
@@ -400,6 +407,7 @@ export function MobileControls() {
     document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
     document.addEventListener('mozpointerlockchange', handlePointerLockChange);
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('wheel', handleWheel, { passive: false });
@@ -414,6 +422,7 @@ export function MobileControls() {
       document.removeEventListener('webkitpointerlockchange', handlePointerLockChange);
       document.removeEventListener('mozpointerlockchange', handlePointerLockChange);
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('wheel', handleWheel);
@@ -634,80 +643,6 @@ export function MobileControls() {
     }
   }, [resetJoystick]);
 
-  // Pointer Fallback for mouse dragging on dev simulator
-  const handleJoyPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return;
-    if (joystickPointerId.current !== null) resetJoystick();
-    joystickPointerId.current = e.pointerId;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-    const rect = e.currentTarget.getBoundingClientRect();
-    const touchX = e.clientX - rect.left;
-    const touchY = e.clientY - rect.top;
-
-    joystickOrigin.current = { x: touchX, y: touchY };
-    liveInput.moveX = 0;
-    liveInput.moveY = 0;
-
-    if (joyBaseRef.current) {
-      joyBaseRef.current.style.display = 'block';
-      joyBaseRef.current.style.left = `${touchX}px`;
-      joyBaseRef.current.style.top = `${touchY}px`;
-    }
-    if (knobRef.current) {
-      knobRef.current.style.transform = 'translate3d(0px, 0px, 0px)';
-    }
-    if (restingBaseRef.current) {
-      restingBaseRef.current.style.opacity = '0.2';
-    }
-  }, [resetJoystick]);
-
-  const handleJoyPointerMove = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return;
-    if (e.pointerId !== joystickPointerId.current || !joystickOrigin.current) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const currentX = e.clientX - rect.left;
-    const currentY = e.clientY - rect.top;
-    const dx = currentX - joystickOrigin.current.x;
-    const dy = currentY - joystickOrigin.current.y;
-    const dist = Math.hypot(dx, dy);
-    const maxRadius = 55;
-    let clampedX = dx;
-    let clampedY = dy;
-    if (dist > maxRadius) {
-      clampedX = (dx / dist) * maxRadius;
-      clampedY = (dy / dist) * maxRadius;
-    }
-    if (knobRef.current) {
-      knobRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0px)`;
-    }
-    const deadzone = 4;
-    if (dist < deadzone) {
-      liveInput.moveX = 0;
-      liveInput.moveY = 0;
-    } else {
-      const normalizedDist = Math.min(1, (dist - deadzone) / (maxRadius - deadzone));
-      const angle = Math.atan2(dy, dx);
-      liveInput.moveX = Math.cos(angle) * normalizedDist;
-      liveInput.moveY = Math.sin(angle) * normalizedDist;
-    }
-  }, []);
-
-  const handleJoyPointerUp = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return;
-    if (e.pointerId === joystickPointerId.current || joystickPointerId.current !== null) {
-      try {
-        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-      resetJoystick();
-    }
-  }, [resetJoystick]);
-
   // Native Multi-Touch Aim & Camera Look Handlers (Zero-lag, iPad compatible)
   const handleLookTouchStart = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
@@ -754,44 +689,6 @@ export function MobileControls() {
         resetLook();
         break;
       }
-    }
-  }, [resetLook]);
-
-  // Pointer Fallback for mouse look
-  const handleLookPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return;
-    if (lookPointerId.current !== null) resetLook();
-    lookPointerId.current = e.pointerId;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      // fallback
-    }
-    lastLookPos.current = { x: e.clientX, y: e.clientY };
-  }, [resetLook]);
-
-  const handleLookPointerMove = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return;
-    if (e.pointerId !== lookPointerId.current) return;
-    const dx = e.clientX - lastLookPos.current.x;
-    const dy = e.clientY - lastLookPos.current.y;
-    const SENSITIVITY_X = 0.0055;
-    const SENSITIVITY_Y = 0.0045;
-    liveInput.ry -= dx * SENSITIVITY_X;
-    const currentPitch = liveInput.pitch ?? 0.15;
-    liveInput.pitch = Math.max(-1.28, Math.min(1.15, currentPitch + dy * SENSITIVITY_Y));
-    lastLookPos.current = { x: e.clientX, y: e.clientY };
-  }, []);
-
-  const handleLookPointerUp = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return;
-    if (e.pointerId === lookPointerId.current || lookPointerId.current !== null) {
-      try {
-        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-      resetLook();
     }
   }, [resetLook]);
 
@@ -1078,11 +975,6 @@ export function MobileControls() {
         onTouchMove={handleJoyTouchMove}
         onTouchEnd={handleJoyTouchEnd}
         onTouchCancel={handleJoyTouchEnd}
-        onPointerDown={handleJoyPointerDown}
-        onPointerMove={handleJoyPointerMove}
-        onPointerUp={handleJoyPointerUp}
-        onPointerCancel={handleJoyPointerUp}
-        onLostPointerCapture={resetJoystick}
       >
         {/* Floating Active Joystick (positioned and transformed via refs) */}
         <div 
@@ -1121,11 +1013,6 @@ export function MobileControls() {
         onTouchMove={handleLookTouchMove}
         onTouchEnd={handleLookTouchEnd}
         onTouchCancel={handleLookTouchEnd}
-        onPointerDown={handleLookPointerDown}
-        onPointerMove={handleLookPointerMove}
-        onPointerUp={handleLookPointerUp}
-        onPointerCancel={handleLookPointerUp}
-        onLostPointerCapture={resetLook}
       />
 
       {/* ACTION BUTTONS (Bottom Right) */}
