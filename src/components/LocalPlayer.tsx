@@ -27,6 +27,8 @@ const localVisorMat = new MeshStandardMaterial({ color: '#111827', roughness: 0.
 
 const localBodyMats: Record<string, MeshStandardMaterial> = {
   '#ef4444': new MeshStandardMaterial({ color: '#ef4444', roughness: 0.4, metalness: 0.2 }),
+  '#3b82f6': new MeshStandardMaterial({ color: '#3b82f6', roughness: 0.4, metalness: 0.2 }),
+  '#eab308': new MeshStandardMaterial({ color: '#eab308', roughness: 0.4, metalness: 0.2 }),
   '#f59e0b': new MeshStandardMaterial({ color: '#f59e0b', roughness: 0.4, metalness: 0.2 }),
   '#10b981': new MeshStandardMaterial({ color: '#10b981', roughness: 0.4, metalness: 0.2 }),
   '#38bdf8': new MeshStandardMaterial({ color: '#38bdf8', roughness: 0.4, metalness: 0.2 }),
@@ -36,6 +38,8 @@ const defaultLocalBodyMat = localBodyMats['#ef4444'];
 const localGliderWingGeo = new BoxGeometry(3.2, 0.08, 1.4);
 const localGliderWingMats: Record<string, MeshStandardMaterial> = {
   '#ef4444': new MeshStandardMaterial({ color: '#ef4444', roughness: 0.3, metalness: 0.4 }),
+  '#3b82f6': new MeshStandardMaterial({ color: '#3b82f6', roughness: 0.3, metalness: 0.4 }),
+  '#eab308': new MeshStandardMaterial({ color: '#eab308', roughness: 0.3, metalness: 0.4 }),
   '#f59e0b': new MeshStandardMaterial({ color: '#f59e0b', roughness: 0.3, metalness: 0.4 }),
   '#10b981': new MeshStandardMaterial({ color: '#10b981', roughness: 0.3, metalness: 0.4 }),
   '#38bdf8': new MeshStandardMaterial({ color: '#38bdf8', roughness: 0.3, metalness: 0.4 }),
@@ -68,6 +72,8 @@ const localGunAccentGeo = new BoxGeometry(0.08, 0.04, 0.35);
 
 const localGunAccentMats: Record<string, MeshBasicMaterial> = {
   '#ef4444': new MeshBasicMaterial({ color: '#ef4444' }),
+  '#3b82f6': new MeshBasicMaterial({ color: '#3b82f6' }),
+  '#eab308': new MeshBasicMaterial({ color: '#eab308' }),
   '#f59e0b': new MeshBasicMaterial({ color: '#f59e0b' }),
   '#10b981': new MeshBasicMaterial({ color: '#10b981' }),
   '#38bdf8': new MeshBasicMaterial({ color: '#38bdf8' }),

@@ -49,6 +49,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [charClass, setCharClass] = useState<CharacterClass>('melee');
   const [botCount, setBotCount] = useState(15);
+  const [teamChoice, setTeamChoice] = useState<'auto' | 'red' | 'blue'>('auto');
   const [lastProcessedMatch, setLastProcessedMatch] = useState<string | null>(null);
   const [cloudProfile, setCloudProfile] = useState<UserProfileData | null>(null);
 
@@ -86,7 +87,7 @@ export default function App() {
   const handlePlayAgain = () => {
     leaveGame();
     setTimeout(() => {
-      connect(mode, password, charClass, botCount);
+      connect(mode, password, charClass, botCount, teamChoice);
       setHasStarted(true);
     }, 120);
   };
@@ -189,7 +190,7 @@ export default function App() {
   const displayRate = activeRating !== null ? activeRating.toFixed(1) : activePoints;
 
   const handleJoin = () => {
-    connect(mode, password, charClass, botCount);
+    connect(mode, password, charClass, botCount, teamChoice);
     setHasStarted(true);
   };
 
@@ -309,6 +310,77 @@ export default function App() {
           </div>
         )}
 
+        {mode === 'team' && (
+          <div className="mb-4 bg-slate-800/90 border border-teal-500/40 rounded-2xl p-3 sm:p-4 w-full max-w-md flex flex-col items-center gap-3 shadow-xl">
+            <div className="w-full text-left">
+              <div className="text-xs sm:text-sm font-bold text-teal-300 mb-1.5 flex items-center justify-between">
+                <span>🛡️ 所属チーム選択:</span>
+                <span className="text-[10px] text-slate-400 font-normal">自動またはお好みの陣営を選択</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 w-full">
+                <button
+                  type="button"
+                  onClick={() => setTeamChoice('auto')}
+                  className={`py-2 px-1 rounded-xl text-xs sm:text-sm font-black transition-all ${
+                    teamChoice === 'auto'
+                      ? 'bg-teal-600 text-white ring-2 ring-teal-300 shadow-md scale-102'
+                      : 'bg-slate-700/80 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  🎲 自動均等
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeamChoice('red')}
+                  className={`py-2 px-1 rounded-xl text-xs sm:text-sm font-black transition-all ${
+                    teamChoice === 'red'
+                      ? 'bg-red-600 text-white ring-2 ring-red-300 shadow-md scale-102'
+                      : 'bg-slate-700/80 text-red-300 hover:bg-slate-700'
+                  }`}
+                >
+                  🔴 赤チーム
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeamChoice('blue')}
+                  className={`py-2 px-1 rounded-xl text-xs sm:text-sm font-black transition-all ${
+                    teamChoice === 'blue'
+                      ? 'bg-blue-600 text-white ring-2 ring-blue-300 shadow-md scale-102'
+                      : 'bg-slate-700/80 text-blue-300 hover:bg-slate-700'
+                  }`}
+                >
+                  🔵 青チーム
+                </button>
+              </div>
+            </div>
+
+            <div className="w-full pt-2 border-t border-white/10">
+              <div className="flex items-center justify-between w-full text-xs sm:text-sm font-bold mb-1.5">
+                <span className="text-teal-300">👥 参戦Bot数 (即時対戦):</span>
+                <span className="text-sm sm:text-base font-black text-amber-300 bg-teal-950/80 px-2.5 py-0.5 rounded-lg border border-teal-400/40">
+                  {botCount} 体 ({Math.ceil((botCount + 1) / 2)} vs {Math.floor((botCount + 1) / 2)})
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 sm:gap-2 w-full justify-between">
+                {[10, 20, 40, 60].map((count) => (
+                  <button
+                    key={count}
+                    type="button"
+                    onClick={() => setBotCount(count)}
+                    className={`flex-1 py-1 rounded-lg text-[10px] sm:text-xs font-black transition-all ${
+                      botCount === count
+                        ? 'bg-teal-600 text-white shadow-md ring-1 ring-teal-300'
+                        : 'bg-slate-700/80 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {count}体
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {mode === 'password' && (
           <input 
             type="text" 
@@ -412,11 +484,23 @@ export default function App() {
               <Trophy size={36} className="animate-bounce" />
             </div>
             <h1 className="text-4xl md:text-5xl font-black text-yellow-400 mb-1 drop-shadow tracking-wider">
-              {winner === myId ? 'VICTORY ROYALE!' : 'MATCH OVER'}
+              {gameMode === 'team'
+                ? winner === myPlayerTeam
+                  ? 'TEAM VICTORY!'
+                  : 'DEFEAT'
+                : winner === myId
+                ? 'VICTORY ROYALE!'
+                : 'MATCH OVER'}
             </h1>
             
             <p className="text-slate-400 text-sm font-semibold mb-6">
-              {winner === myId ? '見事最後まで生き残りました！' : '試合が終了しました'}
+              {gameMode === 'team'
+                ? winner === myPlayerTeam
+                  ? `自陣（${myPlayerTeam === 'red' ? '赤チーム' : '青チーム'}）が見事勝利しました！`
+                  : `${winner === 'red' ? '赤チーム' : '青チーム'}の勝利となりました。`
+                : winner === myId
+                ? '見事最後まで生き残りました！'
+                : '試合が終了しました'}
             </p>
 
             <div className="bg-slate-800/80 w-full rounded-2xl p-4 mb-6 border border-white/5 flex justify-around items-center">

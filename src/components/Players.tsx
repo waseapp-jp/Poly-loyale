@@ -32,6 +32,8 @@ const sharedVisorMat = new MeshStandardMaterial({ color: '#111827', roughness: 0
 // Pre-cached static materials for player bodies
 const bodyMats: Record<string, MeshStandardMaterial> = {
   '#ef4444': new MeshStandardMaterial({ color: '#ef4444', roughness: 0.4, metalness: 0.2 }),
+  '#3b82f6': new MeshStandardMaterial({ color: '#3b82f6', roughness: 0.4, metalness: 0.2 }),
+  '#eab308': new MeshStandardMaterial({ color: '#eab308', roughness: 0.4, metalness: 0.2 }),
   '#f59e0b': new MeshStandardMaterial({ color: '#f59e0b', roughness: 0.4, metalness: 0.2 }),
   '#10b981': new MeshStandardMaterial({ color: '#10b981', roughness: 0.4, metalness: 0.2 }),
   '#38bdf8': new MeshStandardMaterial({ color: '#38bdf8', roughness: 0.4, metalness: 0.2 }),
@@ -42,6 +44,8 @@ const defaultBodyMat = bodyMats['#ef4444'];
 const sharedGliderWingGeo = new BoxGeometry(3.2, 0.08, 1.4);
 const gliderWingMats: Record<string, MeshStandardMaterial> = {
   '#ef4444': new MeshStandardMaterial({ color: '#ef4444', roughness: 0.3, metalness: 0.4 }),
+  '#3b82f6': new MeshStandardMaterial({ color: '#3b82f6', roughness: 0.3, metalness: 0.4 }),
+  '#eab308': new MeshStandardMaterial({ color: '#eab308', roughness: 0.3, metalness: 0.4 }),
   '#f59e0b': new MeshStandardMaterial({ color: '#f59e0b', roughness: 0.3, metalness: 0.4 }),
   '#10b981': new MeshStandardMaterial({ color: '#10b981', roughness: 0.3, metalness: 0.4 }),
   '#38bdf8': new MeshStandardMaterial({ color: '#38bdf8', roughness: 0.3, metalness: 0.4 }),
@@ -62,6 +66,8 @@ const sharedGunAccentGeo = new BoxGeometry(0.08, 0.04, 0.35);
 
 const weaponAccentMats: Record<string, MeshBasicMaterial> = {
   '#ef4444': new MeshBasicMaterial({ color: '#ef4444' }),
+  '#3b82f6': new MeshBasicMaterial({ color: '#3b82f6' }),
+  '#eab308': new MeshBasicMaterial({ color: '#eab308' }),
   '#f59e0b': new MeshBasicMaterial({ color: '#f59e0b' }),
   '#10b981': new MeshBasicMaterial({ color: '#10b981' }),
   '#38bdf8': new MeshBasicMaterial({ color: '#38bdf8' }),
@@ -87,12 +93,24 @@ const sharedInvulnMat = new MeshStandardMaterial({ color: '#ef4444', transparent
 const sharedHealGeo = new CylinderGeometry(0.8, 0.8, 2, 8);
 const sharedHealMat = new MeshStandardMaterial({ color: '#22c55e', transparent: true, opacity: 0.3, emissive: '#22c55e', emissiveIntensity: 0.8 });
 
+// Team Markers Geometries & Materials
+const sharedTeamMarkerGeo = new SphereGeometry(0.18, 6, 6);
+const sharedAllyMat = new MeshBasicMaterial({ color: '#38bdf8' }); // Bright cyan for ally
+const sharedEnemyMat = new MeshBasicMaterial({ color: '#ef4444' }); // Vivid red for enemy
+
 const RemotePlayer = React.memo(function RemotePlayer({ id }: { id: string }) {
   const staticMeta = useGameStore((s) => {
     const p = s.gameState?.players[id];
     if (!p) return null;
-    return `${p.color}_${p.characterClass}`;
+    return `${p.color}_${p.characterClass}_${p.team || ''}`;
   });
+
+  const isTeamMode = useGameStore((s) => s.gameState?.mode === 'team');
+  const myId = useGameStore((s) => s.myId);
+  const myTeam = useGameStore((s) => (myId ? s.gameState?.players[myId]?.team : undefined));
+  const remotePlayerTeam = useGameStore((s) => s.gameState?.players[id]?.team);
+  const isAlly = isTeamMode && !!myTeam && !!remotePlayerTeam && remotePlayerTeam === myTeam;
+  const isEnemy = isTeamMode && !!myTeam && !!remotePlayerTeam && remotePlayerTeam !== myTeam;
 
   const color = staticMeta ? staticMeta.split('_')[0] : 'blue';
   const characterClass = (staticMeta ? staticMeta.split('_')[1] : 'melee') as any;
@@ -217,6 +235,16 @@ const RemotePlayer = React.memo(function RemotePlayer({ id }: { id: string }) {
       
       {/* Healing */}
       <mesh ref={healRef} geometry={sharedHealGeo} material={sharedHealMat} position={[0, 0, 0]} visible={false} />
+
+      {/* Team Battle Overhead Marker */}
+      {isTeamMode && (isAlly || isEnemy) && (
+        <group position={[0, 1.4, 0]}>
+          <mesh
+            geometry={sharedTeamMarkerGeo}
+            material={isAlly ? sharedAllyMat : sharedEnemyMat}
+          />
+        </group>
+      )}
     </group>
   );
 });

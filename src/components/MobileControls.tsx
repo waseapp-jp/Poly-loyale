@@ -34,6 +34,9 @@ export function MobileControls() {
   const gameStatus = useGameStore((s) => s.gameState?.status);
   const myPlayer = useGameStore((s) => (s.myId && s.gameState?.players ? s.gameState.players[s.myId] : null));
   const aliveCount = useGameStore((s) => (s.gameState?.players ? Object.values(s.gameState.players).filter((p) => !p.isDead).length : 0));
+  const gameMode = useGameStore((s) => s.gameState?.mode);
+  const redAliveCount = useGameStore((s) => (s.gameState?.players ? Object.values(s.gameState.players).filter((p) => !p.isDead && p.team === 'red').length : 0));
+  const blueAliveCount = useGameStore((s) => (s.gameState?.players ? Object.values(s.gameState.players).filter((p) => !p.isDead && p.team === 'blue').length : 0));
   const busTimeLeft = useGameStore((s) => s.gameState?.battleBus?.timeLeft);
   const obstacles = useGameStore((s) => s.gameState?.obstacles);
 
@@ -841,6 +844,26 @@ export function MobileControls() {
           </button>
         </div>
 
+        {/* Center: Team Battle Scoreboard */}
+        {gameMode === 'team' && (
+          <div className="flex items-center gap-1.5 sm:gap-2.5 bg-slate-900/90 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl backdrop-blur-md border border-white/10 shadow-xl">
+            <div className={`flex items-center gap-1 sm:gap-1.5 px-2 py-0.5 rounded-lg font-black text-[11px] sm:text-xs ${myPlayer?.team === 'red' ? 'bg-red-500/30 text-red-300 ring-1 ring-red-400' : 'bg-red-950/40 text-red-400'}`}>
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span>RED: {redAliveCount}</span>
+            </div>
+            <span className="text-slate-500 font-black text-[10px] sm:text-xs">VS</span>
+            <div className={`flex items-center gap-1 sm:gap-1.5 px-2 py-0.5 rounded-lg font-black text-[11px] sm:text-xs ${myPlayer?.team === 'blue' ? 'bg-blue-500/30 text-blue-300 ring-1 ring-blue-400' : 'bg-blue-950/40 text-blue-400'}`}>
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+              <span>BLUE: {blueAliveCount}</span>
+            </div>
+            {myPlayer?.team && (
+              <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded ${myPlayer.team === 'red' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}`}>
+                {myPlayer.team === 'red' ? '自陣: 赤' : '自陣: 青'}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Right Side: Weapon Lv & Score */}
         <div className="bg-slate-900/85 px-3 sm:px-5 py-1.5 sm:py-2.5 rounded-xl sm:rounded-2xl backdrop-blur-md border border-white/10 shadow-lg flex gap-3 sm:gap-5 items-center">
           <div className="text-center border-r border-white/15 pr-2.5 sm:pr-5">
@@ -849,7 +872,9 @@ export function MobileControls() {
           </div>
           <div className="text-right">
             <div className="font-black text-amber-300 text-xs sm:text-base">Score: {myPlayer.score}</div>
-            <div className="text-[10px] sm:text-xs text-slate-300 font-semibold">Alive: {aliveCount}</div>
+            <div className="text-[10px] sm:text-xs text-slate-300 font-semibold">
+              {gameMode === 'team' ? `Alive: ${aliveCount}` : `Alive: ${aliveCount}`}
+            </div>
           </div>
         </div>
       </div>

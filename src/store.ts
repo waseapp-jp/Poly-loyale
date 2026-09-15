@@ -95,7 +95,7 @@ interface StoreState {
   localLastRollTime: number;
   localLastAbilityTime: number;
   localLastHealTime: number;
-  connect: (mode: 'casual' | 'ranked' | 'password' | 'team' | 'bot', password?: string, characterClass?: CharacterClass, botCount?: number) => void;
+  connect: (mode: 'casual' | 'ranked' | 'password' | 'team' | 'bot', password?: string, characterClass?: CharacterClass, botCount?: number, team?: 'red' | 'blue' | 'auto') => void;
   setInput: (input: Partial<ClientInput>) => void;
   sendInput: () => void;
   respawn: () => void;
@@ -128,7 +128,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
     isRolling: false,
     isZoomed: false,
   },
-  connect: (mode, password, characterClass = 'melee', botCount) => {
+  connect: (mode, password, characterClass = 'melee', botCount, team) => {
     if (get().socket) {
       get().socket?.disconnect();
     }
@@ -147,7 +147,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
 
     socket.on('connect', () => {
       console.log('Connected to server');
-      socket.emit('join', { mode, password, characterClass, rating, botCount });
+      socket.emit('join', { mode, password, characterClass, rating, botCount, team });
     });
 
     socket.on('init', ({ id, state }: { id: string, state: GameState }) => {

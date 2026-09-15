@@ -31,7 +31,7 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
     return null;
   }
 
-  const isAiSolo = gameState.mode === 'bot';
+  const canRespawn = gameState.mode === 'bot' || gameState.mode === 'team';
   const otherAlive = Object.values(gameState.players).filter((p) => !p.isDead && p.id !== myId);
   const canSpectate = otherAlive.length > 0;
 
@@ -42,7 +42,7 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
   };
 
   const handleRespawnClick = () => {
-    if (!isAiSolo) return;
+    if (!canRespawn) return;
     if (gameState.status === 'playing') {
       respawn();
     } else {
@@ -65,10 +65,10 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
         </h2>
         <p className="text-slate-400 text-sm font-semibold mb-4">撃破されました</p>
 
-        {!isAiSolo && (
+        {!canRespawn && (
           <div className="mb-5 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3.5 py-2 rounded-xl font-medium flex items-center gap-2">
             <span>🛡️</span>
-            <span>バトロワ仕様: AI Soloモード以外はリスポーンできません</span>
+            <span>バトロワ仕様: カジュアル/ランクモードはリスポーンできません</span>
           </div>
         )}
 
@@ -93,12 +93,17 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
         {/* Class Info */}
         <div className="text-xs text-slate-400 mb-6 bg-slate-800/50 px-4 py-2 rounded-full border border-white/5">
           使用兵科: <span className="font-bold text-slate-200">{CLASS_NAMES[myPlayer.characterClass] || myPlayer.characterClass}</span>
+          {myPlayer.team && (
+            <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-bold ${myPlayer.team === 'red' ? 'bg-red-500/30 text-red-300' : 'bg-blue-500/30 text-blue-300'}`}>
+              {myPlayer.team === 'red' ? '赤チーム' : '青チーム'}
+            </span>
+          )}
         </div>
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-3 w-full">
-          {/* AI Solo mode only: Respawn / Play Again */}
-          {isAiSolo && (
+          {/* Respawn / Play Again */}
+          {canRespawn && (
             <button
               type="button"
               onClick={handleRespawnClick}
@@ -114,7 +119,7 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
             <button
               type="button"
               onClick={handleSpectateClick}
-              className={`w-full ${!isAiSolo ? 'py-4 bg-blue-500 hover:bg-blue-400 text-lg shadow-blue-500/30' : 'py-3.5 bg-blue-600/80 hover:bg-blue-600 text-base'} active:scale-98 text-white font-black rounded-2xl border border-blue-400/30 shadow-lg flex items-center justify-center gap-2 transition-all`}
+              className={`w-full ${!canRespawn ? 'py-4 bg-blue-500 hover:bg-blue-400 text-lg shadow-blue-500/30' : 'py-3.5 bg-blue-600/80 hover:bg-blue-600 text-base'} active:scale-98 text-white font-black rounded-2xl border border-blue-400/30 shadow-lg flex items-center justify-center gap-2 transition-all`}
             >
               <Eye size={22} />
               <span>生存者を観戦する</span>
@@ -125,7 +130,7 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
           <button
             type="button"
             onClick={onReturnToLobby}
-            className={`w-full ${!isAiSolo && !canSpectate ? 'py-4 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black text-lg shadow-yellow-400/20' : 'py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-base border border-white/10'} active:scale-98 rounded-2xl flex items-center justify-center gap-2 transition-all`}
+            className={`w-full ${!canRespawn && !canSpectate ? 'py-4 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black text-lg shadow-yellow-400/20' : 'py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-base border border-white/10'} active:scale-98 rounded-2xl flex items-center justify-center gap-2 transition-all`}
           >
             <LogOut size={18} />
             <span>ロビーに戻る</span>

@@ -70,18 +70,18 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Connection validation on boot
+// Connection validation helper
 export async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
     console.log('Firebase Firestore connection verified');
   } catch (error) {
+    // Gracefully handle offline or initial connection state without throwing
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+      console.warn('Firestore offline mode active');
     }
   }
 }
-testConnection();
 
 export interface UserProfileData {
   userId: string;

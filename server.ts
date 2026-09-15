@@ -374,7 +374,7 @@ function getNearbyObstacles(roomId: string | undefined, minX: number, maxX: numb
   return result;
 }
 
-const lastSentPlayerSnapshots: Record<string, Record<string, { x: number; y: number; z: number; ry: number; health: number; score: number; weaponLevel: number; heals: number; isDead: boolean; flags: string; t: number }>> = {};
+const lastSentPlayerSnapshots: Record<string, Record<string, { x: number; y: number; z: number; ry: number; health: number; score: number; weaponLevel: number; heals: number; isDead: boolean; flags: string; team?: string; t: number }>> = {};
 
 const roomItemsDirty: Record<string, boolean> = {};
 const roomHadBombs: Record<string, boolean> = {};
@@ -406,7 +406,7 @@ function createDynamicState(room: GameState, isDeltaTick = false) {
 
     const prev = roomSnaps[pid];
     const moved = !prev || Math.abs(roundedX - prev.x) >= 0.15 || Math.abs(roundedY - prev.y) >= 0.15 || Math.abs(roundedZ - prev.z) >= 0.15 || Math.abs(roundedRy - prev.ry) >= 0.08;
-    const statusChanged = !prev || prev.health !== roundedHp || prev.score !== p.score || prev.weaponLevel !== p.weaponLevel || prev.heals !== p.heals || prev.isDead !== p.isDead || prev.flags !== flagsStr;
+    const statusChanged = !prev || prev.health !== roundedHp || prev.score !== p.score || prev.weaponLevel !== p.weaponLevel || prev.heals !== p.heals || prev.isDead !== p.isDead || prev.flags !== flagsStr || prev.team !== p.team;
     const heartbeatNeeded = prev && (now - prev.t > 2500);
 
     if (!isDeltaTick || moved || statusChanged || heartbeatNeeded) {
@@ -421,6 +421,7 @@ function createDynamicState(room: GameState, isDeltaTick = false) {
         heals: p.heals,
         isDead: p.isDead,
         flags: flagsStr,
+        team: p.team,
         t: now,
       };
 
@@ -449,7 +450,7 @@ function createDynamicState(room: GameState, isDeltaTick = false) {
         baseP.healProgress = p.healProgress ? Math.round(p.healProgress * 10) / 10 : 0;
       }
 
-      if (!isDeltaTick || !prev) {
+      if (!isDeltaTick || !prev || prev.team !== p.team) {
         baseP.maxHealth = p.maxHealth;
         baseP.name = p.name;
         baseP.team = p.team;
@@ -601,11 +602,16 @@ function dePenetrateObstacles(entity: { x: number, y?: number, z: number }, obst
 
 function spawnBotsForRoom(room: GameState, count = 12) {
   const classes: CharacterClass[] = ['melee', 'sword', 'tank', 'scout'];
+  const isTeamMode = room.mode === 'team';
+
   for (let i = 0; i < count; i++) {
     const botId = `bot_${i + 1}_${Math.random().toString(36).substring(2, 6)}`;
     const botClass = classes[i % classes.length];
     const stats = CLASS_STATS[botClass];
-    const name = `[BOT] ${BOT_NAMES[i % BOT_NAMES.length]}`;
+    const botTeam: 'red' | 'blue' | undefined = isTeamMode ? (i % 2 === 0 ? 'red' : 'blue') : undefined;
+    const botColor = isTeamMode ? (botTeam === 'red' ? '#ef4444' : '#3b82f6') : stats.color;
+    const tag = isTeamMode ? (botTeam === 'red' ? '[RED]' : '[BLUE]') : '[BOT]';
+    const name = `${tag} ${BOT_NAMES[i % BOT_NAMES.length]}`;
     const pos = findSafeSpawnPosition(room.obstacles, MAP_SIZE, 3.5, room.roomId);
     const botRating = 400 + Math.floor(Math.random() * 1200);
 
@@ -614,6 +620,7 @@ function spawnBotsForRoom(room: GameState, count = 12) {
       name,
       isBot: true,
       characterClass: botClass,
+      team: botTeam,
       x: pos.x,
       y: 1,
       z: pos.z,
@@ -622,7 +629,7 @@ function spawnBotsForRoom(room: GameState, count = 12) {
       maxHealth: stats.maxHp,
       isDead: false,
       score: 0,
-      color: stats.color,
+      color: botColor,
       lastShootTime: 0,
       heals: Math.floor(Math.random() * 2) + 1,
       isHealing: false,
@@ -934,7 +941,7 @@ async function startServer() {
   io.on('connection', (socket: Socket) => {
     console.log(`Socket connected: ${socket.id}`);
 
-    socket.on('join', (options: { mode: 'casual' | 'ranked' | 'password' | 'team' | 'bot', password?: string, characterClass?: CharacterClass, rating?: number, botCount?: number }) => {
+    socket.on('join', (options: { mode: 'casual' | 'ranked' | 'password' | 'team' | 'bot', password?: string, characterClass?: CharacterClass, rating?: number, botCount?: number, team?: 'red' | 'blue' | 'auto' }) => {
       let roomId = null;
       const charClass = options.characterClass || 'melee';
       const stats = CLASS_STATS[charClass];
@@ -979,13 +986,17 @@ async function startServer() {
           bombs: {},
           obstacles,
           status: 'waiting',
-          matchTimer: options.mode === 'bot' ? 2 : options.mode === 'ranked' ? 30 : 10,
+          matchTimer: options.mode === 'bot' ? 2 : options.mode === 'team' ? 3 : options.mode === 'ranked' ? 30 : 10,
           winner: null
         };
         buildRoomSpatialData(roomId, obstacles);
 
         if (options.mode === 'bot') {
           const count = Math.min(99, Math.max(1, typeof options.botCount === 'number' ? options.botCount : 15));
+          spawnBotsForRoom(rooms[roomId], count);
+        } else if (options.mode === 'team') {
+          // In team battle, populate room with bots balanced across Red and Blue teams!
+          const count = Math.min(98, Math.max(1, typeof options.botCount === 'number' ? options.botCount : 15));
           spawnBotsForRoom(rooms[roomId], count);
         }
       }
@@ -996,11 +1007,45 @@ async function startServer() {
 
       const spawnPos = findSafeSpawnPosition(room.obstacles, MAP_SIZE, 3.5, roomId);
 
+      // Determine human team & color in team mode
+      let assignedTeam: 'red' | 'blue' | undefined = undefined;
+      let assignedColor = stats.color;
+
+      if (room.mode === 'team') {
+        const redCount = Object.values(room.players).filter(p => p.team === 'red').length;
+        const blueCount = Object.values(room.players).filter(p => p.team === 'blue').length;
+
+        if (options.team === 'red' || options.team === 'blue') {
+          assignedTeam = options.team;
+          // Balance the other team if this choice tips the balance
+          if (assignedTeam === 'red' && redCount > blueCount) {
+            const botToSwap = Object.values(room.players).find(p => p.isBot && p.team === 'red');
+            if (botToSwap) {
+              botToSwap.team = 'blue';
+              botToSwap.color = '#3b82f6';
+              botToSwap.name = botToSwap.name.replace('[RED]', '[BLUE]');
+            }
+          } else if (assignedTeam === 'blue' && blueCount > redCount) {
+            const botToSwap = Object.values(room.players).find(p => p.isBot && p.team === 'blue');
+            if (botToSwap) {
+              botToSwap.team = 'red';
+              botToSwap.color = '#ef4444';
+              botToSwap.name = botToSwap.name.replace('[BLUE]', '[RED]');
+            }
+          }
+        } else {
+          // Auto-balance
+          assignedTeam = redCount <= blueCount ? 'red' : 'blue';
+        }
+        assignedColor = assignedTeam === 'red' ? '#ef4444' : '#3b82f6';
+      }
+
       room.players[socket.id] = {
         id: socket.id,
         name: 'You',
         isBot: false,
         characterClass: charClass,
+        team: assignedTeam,
         x: spawnPos.x,
         y: 1,
         z: spawnPos.z,
@@ -1009,7 +1054,7 @@ async function startServer() {
         maxHealth: stats.maxHp,
         isDead: false,
         score: 0,
-        color: stats.color,
+        color: assignedColor,
         lastShootTime: 0,
         heals: 0,
         isHealing: false,
@@ -1352,8 +1397,8 @@ async function startServer() {
       const player = room.players[socket.id];
       if (!player) return;
 
-      // Only allow in-match respawn in 'bot' (AI Solo) mode
-      if (room.mode !== 'bot') {
+      // Allow in-match respawn in 'bot' and 'team' mode
+      if (room.mode !== 'bot' && room.mode !== 'team') {
         return;
       }
 
@@ -1372,6 +1417,9 @@ async function startServer() {
       player.isInvulnerable = false;
       player.hasShield = false;
       player.lastAbilityTime = 0;
+      if (room.mode === 'team' && player.team) {
+        player.color = player.team === 'red' ? '#ef4444' : '#3b82f6';
+      }
 
       broadcastRoomState(io, room);
       socket.emit('respawned', { x: player.x, y: player.y, z: player.z });
@@ -1503,7 +1551,9 @@ async function startServer() {
               }
 
               if (room.mode === 'team') {
-                p.team = index % 2 === 0 ? 'red' : 'blue';
+                if (!p.team) {
+                  p.team = index % 2 === 0 ? 'red' : 'blue';
+                }
                 p.color = p.team === 'red' ? '#ef4444' : '#3b82f6';
               } else {
                 p.color = CLASS_STATS[p.characterClass].color;
@@ -1511,7 +1561,7 @@ async function startServer() {
             });
           }
         } else {
-          room.matchTimer = room.mode === 'ranked' ? 30 : 10;
+          room.matchTimer = room.mode === 'ranked' ? 30 : (room.mode === 'bot' || room.mode === 'team') ? 3 : 10;
         }
       } else if (room.status === 'playing') {
         
@@ -2149,7 +2199,7 @@ async function startServer() {
                 const isBlocked = isLineBlockedByObstacles(bot.x, bot.y + 1, bot.z, targetPlayer.x, targetPlayer.y + 1, targetPlayer.z, room.obstacles, roomId);
                 const isTargetDodge = targetPlayer.isRolling || (targetPlayer.lastRollTime && now - targetPlayer.lastRollTime < 350);
 
-                if (dot > reqDot && !isBlocked && !targetPlayer.isInvulnerable && !isTargetDodge && !targetPlayer.inBus && !targetPlayer.isSkydiving && !targetPlayer.isGliding) {
+                if (dot > reqDot && !isBlocked && !targetPlayer.isInvulnerable && !isTargetDodge && !targetPlayer.inBus && !targetPlayer.isSkydiving && !targetPlayer.isGliding && !(room.mode === 'team' && targetPlayer.team === bot.team)) {
                   if (!targetPlayer.lastDamagedTime || now - targetPlayer.lastDamagedTime >= 100) {
                     targetPlayer.lastDamagedTime = now;
                     const dmgMult = targetPlayer.hasShield ? 0.5 : 1;
@@ -2217,12 +2267,16 @@ async function startServer() {
 
         // Check win condition
         if (room.mode === 'team') {
-          const redAlive = alivePlayers.filter(p => p.team === 'red').length > 0;
-          const blueAlive = alivePlayers.filter(p => p.team === 'blue').length > 0;
-          if ((!redAlive || !blueAlive) && totalPlayers > 0) {
-            room.status = 'ended';
-            room.winner = redAlive ? 'red' : blueAlive ? 'blue' : null;
-            room.matchTimer = 5;
+          const totalRed = Object.values(room.players).filter(p => p.team === 'red').length;
+          const totalBlue = Object.values(room.players).filter(p => p.team === 'blue').length;
+          if (totalRed > 0 && totalBlue > 0) {
+            const redAlive = alivePlayers.filter(p => p.team === 'red').length > 0;
+            const blueAlive = alivePlayers.filter(p => p.team === 'blue').length > 0;
+            if (!redAlive || !blueAlive) {
+              room.status = 'ended';
+              room.winner = redAlive ? 'red' : blueAlive ? 'blue' : null;
+              room.matchTimer = 5;
+            }
           }
         } else {
           // If all players are eliminated, or 1 winner remains out of multiple players
@@ -2236,7 +2290,7 @@ async function startServer() {
         room.matchTimer -= dt;
         if (room.matchTimer <= 0) {
           room.status = 'waiting';
-          room.matchTimer = room.mode === 'ranked' ? 30 : 10;
+          room.matchTimer = room.mode === 'ranked' ? 30 : (room.mode === 'bot' || room.mode === 'team') ? 3 : 10;
         }
       }
 
