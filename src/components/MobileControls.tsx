@@ -76,12 +76,29 @@ export function MobileControls() {
     const saved = localStorage.getItem('poly_mouse_sens');
     return saved ? parseFloat(saved) : 1.0;
   });
-  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [touchSensitivity, setTouchSensitivity] = useState(() => {
+    const saved = localStorage.getItem('poly_touch_sens');
+    return saved ? parseFloat(saved) : 1.2;
+  });
+  const [isTouchDevice, setIsTouchDevice] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(pointer: coarse)').matches;
+  });
   const pressedKeysRef = useRef(new Set<string>());
 
-  const handleSensitivityChange = (newSens: number) => {
+  // Dedicated touch IDs for multi-touch tracking on iPad / mobile
+  const joystickTouchId = useRef<number | null>(null);
+  const lookTouchId = useRef<number | null>(null);
+  const prevMousePos = useRef<{ x: number; y: number } | null>(null);
+
+  const handleMouseSensitivityChange = (newSens: number) => {
     setMouseSensitivity(newSens);
     localStorage.setItem('poly_mouse_sens', newSens.toString());
+  };
+
+  const handleTouchSensitivityChange = (newSens: number) => {
+    setTouchSensitivity(newSens);
+    localStorage.setItem('poly_touch_sens', newSens.toString());
   };
 
   // Sync zoom state
@@ -93,6 +110,33 @@ export function MobileControls() {
       return next;
     });
   }, [setInput]);
+
+  // Request Pointer Lock with full Safari/iPadOS WebKit compatibility
+  const requestPointerLock = useCallback(() => {
+    try {
+      const el = document.getElementById('root') || document.body || document.documentElement;
+      const req = el.requestPointerLock || (el as any).webkitRequestPointerLock || (el as any).mozRequestPointerLock || document.body.requestPointerLock;
+      if (req) {
+        const promise = req.call(el);
+        if (promise && typeof promise.catch === 'function') {
+          promise.catch((err: any) => console.warn('Pointer lock error:', err));
+        }
+      }
+    } catch (err) {
+      console.warn('Pointer lock request error:', err);
+    }
+  }, []);
+
+  const exitPointerLock = useCallback(() => {
+    try {
+      const exitReq = document.exitPointerLock || (document as any).webkitExitPointerLock || (document as any).mozExitPointerLock;
+      if (exitReq) {
+        exitReq.call(document);
+      }
+    } catch (err) {
+      console.warn('Pointer lock exit error:', err);
+    }
+  }, []);
 
   // Real-time clock for smooth ability cooldown / duration meters
   const [currentTime, setCurrentTime] = useState(() => Date.now());
@@ -140,6 +184,7 @@ export function MobileControls() {
 
   // Unified Joystick Reset Function
   const resetJoystick = useCallback(() => {
+    joystickTouchId.current = null;
     joystickPointerId.current = null;
     joystickOrigin.current = null;
 
@@ -168,58 +213,101 @@ export function MobileControls() {
 
   // Reset look pointer
   const resetLook = useCallback(() => {
+    lookTouchId.current = null;
     lookPointerId.current = null;
   }, []);
 
-  // Pointer Lock and Mouse Control Handlers
-  const requestPointerLock = useCallback(() => {
-    try {
-      if (!document.pointerLockElement) {
-        document.body.requestPointerLock?.();
-      }
-    } catch (err) {
-      console.warn('Pointer lock request error:', err);
-    }
-  }, []);
+  // Mobile Jump / Drop / Roll Handler
+  const handleMobileJumpAction = useCallback(() => {
+    const { myId: curId, gameState: curState } = useGameStore.getState();
+    const p = curId && curState ? curState.players[curId] : null;
+    const groundH = p && curState?.obstacles ? getGroundHeight(p.x, p.z, curState.obstacles) : 0;
+    const isAirborne = p ? (!p.inBus && (p.isSkydiving || p.isGliding || p.y > groundH + 1.2)) : false;
 
-  const exitPointerLock = useCallback(() => {
-    try {
-      if (document.pointerLockElement) {
-        document.exitPointerLock?.();
-      }
-    } catch (err) {
-      console.warn('Pointer lock exit error:', err);
+    if (p?.inBus) {
+      liveInput.jumpFromBus = true;
+      setInput({ jumpFromBus: true });
+    } else if (isAirborne) {
+      liveInput.toggleGlider = true;
+      setInput({ toggleGlider: true });
+    } else {
+      liveInput.isRolling = true;
+      setInput({ isRolling: true });
+      setIsRollingActive(true);
+      setTimeout(() => {
+        liveInput.isRolling = false;
+        setInput({ isRolling: false });
+        setIsRollingActive(false);
+      }, 250);
     }
-  }, []);
+  }, [setInput]);
 
   // Global window listeners & Pointer Lock tracking
   useEffect(() => {
     const handlePointerLockChange = () => {
-      const locked = !!document.pointerLockElement;
-      setIsPointerLocked(locked);
+      const isLocked = !!(
+        document.pointerLockElement ||
+        (document as any).webkitPointerLockElement ||
+        (document as any).mozPointerLockElement
+      );
+      setIsPointerLocked(isLocked);
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (document.pointerLockElement) {
-        // High-framerate pointer lock mouse look
-        const sensX = 0.0026 * mouseSensitivity;
-        const sensY = 0.0022 * mouseSensitivity;
+      const isLocked = !!(
+        document.pointerLockElement ||
+        (document as any).webkitPointerLockElement ||
+        (document as any).mozPointerLockElement
+      );
 
-        liveInput.ry -= e.movementX * sensX;
+      let dx = e.movementX ?? (e as any).webkitMovementX ?? (e as any).mozMovementX ?? 0;
+      let dy = e.movementY ?? (e as any).webkitMovementY ?? (e as any).mozMovementY ?? 0;
+
+      // Safari on iPadOS often returns 0 for movementX/Y in mousemove events.
+      // Use clientX / clientY delta fallback if movement is within reasonable threshold.
+      if (dx === 0 && dy === 0 && prevMousePos.current) {
+        const clientDx = e.clientX - prevMousePos.current.x;
+        const clientDy = e.clientY - prevMousePos.current.y;
+        if (Math.abs(clientDx) < 300 && Math.abs(clientDy) < 300) {
+          dx = clientDx;
+          dy = clientDy;
+        }
+      }
+      prevMousePos.current = { x: e.clientX, y: e.clientY };
+
+      if (isLocked) {
+        // High-precision pointer lock look
+        const sensX = 0.0028 * mouseSensitivity;
+        const sensY = 0.0024 * mouseSensitivity;
+
+        liveInput.ry -= dx * sensX;
         const currentPitch = liveInput.pitch ?? 0.15;
-        liveInput.pitch = Math.max(-1.28, Math.min(1.15, currentPitch + e.movementY * sensY));
+        liveInput.pitch = Math.max(-1.28, Math.min(1.15, currentPitch + dy * sensY));
+      } else if (e.buttons > 0) {
+        // Fallback: If not pointer locked (or before user locks on iPad), dragging mouse rotates view
+        const sensX = 0.0038 * mouseSensitivity;
+        const sensY = 0.0032 * mouseSensitivity;
+
+        liveInput.ry -= dx * sensX;
+        const currentPitch = liveInput.pitch ?? 0.15;
+        liveInput.pitch = Math.max(-1.28, Math.min(1.15, currentPitch + dy * sensY));
       }
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      // Ignore clicks on UI buttons/modals
+      // Ignore clicks on actual interactive UI elements (buttons, inputs, modal dialogs, minimap)
       const target = e.target as HTMLElement;
-      if (target && target.closest('button, input, [role="dialog"], .pointer-events-auto:not(#game-touch-zone)')) {
+      if (target && target.closest('button, input, textarea, select, [role="dialog"], #settings-modal, #minimap')) {
         return;
       }
 
       // If clicked with mouse and not in pointer lock, request pointer lock
-      if (!document.pointerLockElement && e.button === 0) {
+      const isLocked = !!(
+        document.pointerLockElement ||
+        (document as any).webkitPointerLockElement ||
+        (document as any).mozPointerLockElement
+      );
+      if (!isLocked && e.button === 0) {
         requestPointerLock();
       }
 
@@ -235,21 +323,9 @@ export function MobileControls() {
         setInput({ isZoomed: true });
         setIsZoomedLocal(true);
       } else if (e.button === 1) {
-        // Middle Click = Dodge Roll / Jump
+        // Middle Click = Jump / Roll / Drop
         e.preventDefault();
-        const { myId: curId, gameState: curState } = useGameStore.getState();
-        const p = curId && curState ? curState.players[curId] : null;
-        if (p?.inBus) {
-          liveInput.jumpFromBus = true;
-          setInput({ jumpFromBus: true });
-        } else if (p?.isSkydiving || p?.isGliding) {
-          liveInput.toggleGlider = true;
-          setInput({ toggleGlider: true });
-        } else {
-          liveInput.isRolling = true;
-          setInput({ isRolling: true });
-          setIsRollingActive(true);
-        }
+        handleMobileJumpAction();
       }
     };
 
@@ -270,7 +346,12 @@ export function MobileControls() {
     };
 
     const handleWheel = (e: WheelEvent) => {
-      if (document.pointerLockElement) {
+      const isLocked = !!(
+        document.pointerLockElement ||
+        (document as any).webkitPointerLockElement ||
+        (document as any).mozPointerLockElement
+      );
+      if (isLocked) {
         e.preventDefault();
         if (e.deltaY < 0) {
           // Wheel Up = Zoom In
@@ -282,31 +363,6 @@ export function MobileControls() {
           liveInput.isZoomed = false;
           setInput({ isZoomed: false });
           setIsZoomedLocal(false);
-        }
-      }
-    };
-
-    const handleGlobalPointerUp = (e: PointerEvent) => {
-      if (e.pointerId === joystickPointerId.current) {
-        resetJoystick();
-      }
-      if (e.pointerId === lookPointerId.current) {
-        resetLook();
-      }
-    };
-
-    const handleGlobalTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length === 0) {
-        resetJoystick();
-        resetLook();
-        if (liveInput.isShooting || liveInput.isHealing || liveInput.useAbility) {
-          liveInput.isShooting = false;
-          liveInput.isHealing = false;
-          liveInput.useAbility = false;
-          setIsShootingActive(false);
-          setIsHealingActive(false);
-          setIsAbilityActive(false);
-          setInput({ isShooting: false, isHealing: false, useAbility: false });
         }
       }
     };
@@ -332,37 +388,39 @@ export function MobileControls() {
       }
     };
 
-    // Detect if primary pointer is touch
-    if (window.matchMedia('(pointer: coarse)').matches) {
-      setIsTouchDevice(true);
-    }
+    // iOS Gesture prevention (prevent Safari pinch-to-zoom and gesture cancellation)
+    const preventGesture = (e: Event) => {
+      e.preventDefault();
+    };
 
+    document.addEventListener('gesturestart', preventGesture, { passive: false });
+    document.addEventListener('gesturechange', preventGesture, { passive: false });
+    document.addEventListener('gestureend', preventGesture, { passive: false });
     document.addEventListener('pointerlockchange', handlePointerLockChange);
+    document.addEventListener('webkitpointerlockchange', handlePointerLockChange);
+    document.addEventListener('mozpointerlockchange', handlePointerLockChange);
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('wheel', handleWheel, { passive: false });
-    window.addEventListener('pointerup', handleGlobalPointerUp);
-    window.addEventListener('pointercancel', handleGlobalPointerUp);
-    window.addEventListener('touchend', handleGlobalTouchEnd);
-    window.addEventListener('touchcancel', handleGlobalTouchEnd);
     window.addEventListener('blur', handleGlobalBlur);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      document.removeEventListener('gesturestart', preventGesture);
+      document.removeEventListener('gesturechange', preventGesture);
+      document.removeEventListener('gestureend', preventGesture);
       document.removeEventListener('pointerlockchange', handlePointerLockChange);
+      document.removeEventListener('webkitpointerlockchange', handlePointerLockChange);
+      document.removeEventListener('mozpointerlockchange', handlePointerLockChange);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('wheel', handleWheel);
-      window.removeEventListener('pointerup', handleGlobalPointerUp);
-      window.removeEventListener('pointercancel', handleGlobalPointerUp);
-      window.removeEventListener('touchend', handleGlobalTouchEnd);
-      window.removeEventListener('touchcancel', handleGlobalTouchEnd);
       window.removeEventListener('blur', handleGlobalBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [resetJoystick, resetLook, setInput, mouseSensitivity, requestPointerLock]);
+  }, [resetJoystick, resetLook, setInput, mouseSensitivity, requestPointerLock, handleMobileJumpAction]);
 
   // Reset controls when dead or game not active
   useEffect(() => {
@@ -489,29 +547,103 @@ export function MobileControls() {
     };
   }, [setInput, toggleZoom, exitPointerLock]);
 
-  // Floating Joystick Handlers (Touch only so mouse clicks never get trapped)
-  const handleJoyPointerDown = useCallback((e: React.PointerEvent) => {
-    // If pointer is mouse, do not activate virtual touch joystick
-    if (e.pointerType === 'mouse') {
-      return;
-    }
+  // Native Multi-Touch Handlers for iPad and Mobile (Zero-lag, 1v1.lol responsive)
+  const handleJoyTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (joystickTouchId.current !== null) return;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
 
-    if (joystickPointerId.current !== null) {
-      try {
-        (e.currentTarget as HTMLElement).releasePointerCapture(joystickPointerId.current);
-      } catch {
-        // ignore
+    joystickTouchId.current = touch.identifier;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+
+    joystickOrigin.current = { x: touchX, y: touchY };
+    liveInput.moveX = 0;
+    liveInput.moveY = 0;
+
+    if (joyBaseRef.current) {
+      joyBaseRef.current.style.display = 'block';
+      joyBaseRef.current.style.left = `${touchX}px`;
+      joyBaseRef.current.style.top = `${touchY}px`;
+    }
+    if (knobRef.current) {
+      knobRef.current.style.transform = 'translate3d(0px, 0px, 0px)';
+    }
+    if (restingBaseRef.current) {
+      restingBaseRef.current.style.opacity = '0.2';
+    }
+  }, []);
+
+  const handleJoyTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (joystickTouchId.current === null || !joystickOrigin.current) return;
+
+    let targetTouch: React.Touch | null = null;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === joystickTouchId.current) {
+        targetTouch = e.changedTouches[i];
+        break;
       }
-      resetJoystick();
+    }
+    if (!targetTouch) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const currentX = targetTouch.clientX - rect.left;
+    const currentY = targetTouch.clientY - rect.top;
+
+    const dx = currentX - joystickOrigin.current.x;
+    const dy = currentY - joystickOrigin.current.y;
+    const dist = Math.hypot(dx, dy);
+    const maxRadius = 55;
+
+    let clampedX = dx;
+    let clampedY = dy;
+    if (dist > maxRadius) {
+      clampedX = (dx / dist) * maxRadius;
+      clampedY = (dy / dist) * maxRadius;
     }
 
+    if (knobRef.current) {
+      knobRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0px)`;
+    }
+
+    const deadzone = 4;
+    if (dist < deadzone) {
+      liveInput.moveX = 0;
+      liveInput.moveY = 0;
+    } else {
+      const normalizedDist = Math.min(1, (dist - deadzone) / (maxRadius - deadzone));
+      const angle = Math.atan2(dy, dx);
+      liveInput.moveX = Math.cos(angle) * normalizedDist;
+      liveInput.moveY = Math.sin(angle) * normalizedDist;
+    }
+  }, []);
+
+  const handleJoyTouchEnd = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === joystickTouchId.current) {
+        resetJoystick();
+        break;
+      }
+    }
+  }, [resetJoystick]);
+
+  // Pointer Fallback for mouse dragging on dev simulator
+  const handleJoyPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === 'touch') return;
+    if (joystickPointerId.current !== null) resetJoystick();
     joystickPointerId.current = e.pointerId;
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
-      // fallback
+      // ignore
     }
-
     const rect = e.currentTarget.getBoundingClientRect();
     const touchX = e.clientX - rect.left;
     const touchY = e.clientY - rect.top;
@@ -534,30 +666,24 @@ export function MobileControls() {
   }, [resetJoystick]);
 
   const handleJoyPointerMove = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'mouse') return;
+    if (e.pointerType === 'touch') return;
     if (e.pointerId !== joystickPointerId.current || !joystickOrigin.current) return;
-
     const rect = e.currentTarget.getBoundingClientRect();
     const currentX = e.clientX - rect.left;
     const currentY = e.clientY - rect.top;
-
     const dx = currentX - joystickOrigin.current.x;
     const dy = currentY - joystickOrigin.current.y;
     const dist = Math.hypot(dx, dy);
     const maxRadius = 55;
-
     let clampedX = dx;
     let clampedY = dy;
     if (dist > maxRadius) {
       clampedX = (dx / dist) * maxRadius;
       clampedY = (dy / dist) * maxRadius;
     }
-
     if (knobRef.current) {
       knobRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0px)`;
     }
-
-    // Apply deadzone and smooth linear response curve
     const deadzone = 4;
     if (dist < deadzone) {
       liveInput.moveX = 0;
@@ -565,14 +691,13 @@ export function MobileControls() {
     } else {
       const normalizedDist = Math.min(1, (dist - deadzone) / (maxRadius - deadzone));
       const angle = Math.atan2(dy, dx);
-      // Normalized movement vector: -1 to 1
       liveInput.moveX = Math.cos(angle) * normalizedDist;
       liveInput.moveY = Math.sin(angle) * normalizedDist;
     }
   }, []);
 
   const handleJoyPointerUp = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'mouse') return;
+    if (e.pointerType === 'touch') return;
     if (e.pointerId === joystickPointerId.current || joystickPointerId.current !== null) {
       try {
         (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -583,19 +708,59 @@ export function MobileControls() {
     }
   }, [resetJoystick]);
 
-  // Camera Look Touch Handlers (Touch only, smooth responsive aiming)
-  const handleLookPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'mouse') return;
+  // Native Multi-Touch Aim & Camera Look Handlers (Zero-lag, iPad compatible)
+  const handleLookTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (lookTouchId.current !== null) return;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    lookTouchId.current = touch.identifier;
+    lastLookPos.current = { x: touch.clientX, y: touch.clientY };
+  }, []);
 
-    if (lookPointerId.current !== null) {
-      try {
-        (e.currentTarget as HTMLElement).releasePointerCapture(lookPointerId.current);
-      } catch {
-        // ignore
+  const handleLookTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (lookTouchId.current === null) return;
+
+    let targetTouch: React.Touch | null = null;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === lookTouchId.current) {
+        targetTouch = e.changedTouches[i];
+        break;
       }
-      lookPointerId.current = null;
     }
+    if (!targetTouch) return;
 
+    const dx = targetTouch.clientX - lastLookPos.current.x;
+    const dy = targetTouch.clientY - lastLookPos.current.y;
+
+    const SENS_X = 0.0055 * touchSensitivity;
+    const SENS_Y = 0.0045 * touchSensitivity;
+
+    liveInput.ry -= dx * SENS_X;
+    const currentPitch = liveInput.pitch ?? 0.15;
+    liveInput.pitch = Math.max(-1.28, Math.min(1.15, currentPitch + dy * SENS_Y));
+
+    lastLookPos.current = { x: targetTouch.clientX, y: targetTouch.clientY };
+  }, [touchSensitivity]);
+
+  const handleLookTouchEnd = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === lookTouchId.current) {
+        resetLook();
+        break;
+      }
+    }
+  }, [resetLook]);
+
+  // Pointer Fallback for mouse look
+  const handleLookPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === 'touch') return;
+    if (lookPointerId.current !== null) resetLook();
     lookPointerId.current = e.pointerId;
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -603,30 +768,23 @@ export function MobileControls() {
       // fallback
     }
     lastLookPos.current = { x: e.clientX, y: e.clientY };
-  }, []);
+  }, [resetLook]);
 
   const handleLookPointerMove = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'mouse') return;
+    if (e.pointerType === 'touch') return;
     if (e.pointerId !== lookPointerId.current) return;
-
     const dx = e.clientX - lastLookPos.current.x;
     const dy = e.clientY - lastLookPos.current.y;
-
-    // Direct, ultra-smooth touch sensitivity
     const SENSITIVITY_X = 0.0055;
     const SENSITIVITY_Y = 0.0045;
-
     liveInput.ry -= dx * SENSITIVITY_X;
-
-    // Pitch control (vertical look clamped between -1.28 and 1.15 rad / approx -74 deg to +66 deg)
     const currentPitch = liveInput.pitch ?? 0.15;
     liveInput.pitch = Math.max(-1.28, Math.min(1.15, currentPitch + dy * SENSITIVITY_Y));
-
     lastLookPos.current = { x: e.clientX, y: e.clientY };
   }, []);
 
   const handleLookPointerUp = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'mouse') return;
+    if (e.pointerType === 'touch') return;
     if (e.pointerId === lookPointerId.current || lookPointerId.current !== null) {
       try {
         (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -843,55 +1001,83 @@ export function MobileControls() {
         <Minimap />
       </div>
 
-      {/* PC Mouse Controls Guide & Sensitivity Quick Selector */}
-      {!isTouchDevice && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2">
-          {isPointerLocked ? (
-            <div className="bg-slate-950/80 backdrop-blur-md border border-emerald-400/40 px-3.5 py-1.5 rounded-full shadow-[0_0_15px_rgba(16,185,129,0.3)] flex items-center gap-3 text-xs text-slate-200">
-              <span className="flex items-center gap-1.5 font-bold text-emerald-400">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                マウス操作中 (ESC: 解除)
-              </span>
-              <span className="text-slate-500">|</span>
-              <span className="text-slate-400 font-medium">感度:</span>
-              <div className="flex items-center gap-1">
-                {[0.75, 1.0, 1.5, 2.0].map((sens) => (
-                  <button
-                    key={sens}
-                    type="button"
-                    onClick={() => handleSensitivityChange(sens)}
-                    className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                      mouseSensitivity === sens
-                        ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                        : 'bg-white/10 hover:bg-white/20 text-slate-300'
-                    }`}
-                  >
-                    {sens}x
-                  </button>
-                ))}
-              </div>
+      {/* Sensitivity & Mouse Lock Selector (Responsive on PC, iPad, and Touch Devices) */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-2 flex-wrap justify-center">
+        {isPointerLocked ? (
+          <div className="bg-slate-950/85 backdrop-blur-md border border-emerald-400/40 px-3.5 py-1.5 rounded-full shadow-[0_0_15px_rgba(16,185,129,0.3)] flex items-center gap-3 text-xs text-slate-200">
+            <span className="flex items-center gap-1.5 font-bold text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              マウス操作中 (ESC: 解除)
+            </span>
+            <span className="text-slate-500">|</span>
+            <span className="text-slate-400 font-medium">感度:</span>
+            <div className="flex items-center gap-1">
+              {[0.75, 1.0, 1.5, 2.0].map((sens) => (
+                <button
+                  key={sens}
+                  type="button"
+                  onClick={() => handleMouseSensitivityChange(sens)}
+                  className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                    mouseSensitivity === sens
+                      ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                      : 'bg-white/10 hover:bg-white/20 text-slate-300'
+                  }`}
+                >
+                  {sens}x
+                </button>
+              ))}
             </div>
-          ) : (
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 flex-wrap justify-center">
             <button
               type="button"
               onClick={requestPointerLock}
-              className="bg-slate-950/85 hover:bg-slate-900 border border-cyan-400/40 px-4 py-1.5 rounded-full shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center gap-2.5 text-xs text-cyan-200 cursor-pointer hover:scale-105 active:scale-95 transition-all"
+              className="bg-slate-950/90 hover:bg-slate-900 border border-cyan-400/50 px-3.5 py-1.5 rounded-full shadow-[0_0_18px_rgba(6,182,212,0.35)] flex items-center gap-2 text-xs text-cyan-200 cursor-pointer hover:scale-105 active:scale-95 transition-all"
             >
               <span className="text-sm">🖱️</span>
-              <span className="font-bold">画面クリックでマウス視線操作を有効化</span>
-              <span className="text-[10px] text-cyan-400/80 bg-cyan-950/80 px-2 py-0.5 rounded-md border border-cyan-500/30">
-                WASD: 移動 / 左クリック: 射撃
+              <span className="font-bold">マウス/トラックパッド操作を有効化</span>
+              <span className="text-[10px] text-cyan-400/80 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-500/30">
+                ポインターロック
               </span>
             </button>
-          )}
-        </div>
-      )}
+
+            {isTouchDevice && (
+              <div className="bg-slate-950/85 backdrop-blur-md border border-cyan-400/30 px-2.5 py-1 rounded-full shadow-md flex items-center gap-1.5 text-xs text-slate-300">
+                <span className="font-bold text-cyan-400 text-[10px]">
+                  📱 タッチ感度:
+                </span>
+                <div className="flex items-center gap-0.5">
+                  {[0.8, 1.0, 1.3, 1.7].map((sens) => (
+                    <button
+                      key={sens}
+                      type="button"
+                      onClick={() => handleTouchSensitivityChange(sens)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-black transition-all cursor-pointer ${
+                        touchSensitivity === sens
+                          ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                          : 'bg-white/10 hover:bg-white/20 text-slate-300'
+                      }`}
+                    >
+                      {sens}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* LEFT HALF SCREEN: Dynamic Floating Movement Joystick */}
       <div 
         ref={leftZoneRef}
         className="absolute top-0 left-0 bottom-0 w-1/2 pointer-events-auto touch-none select-none"
         style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+        onTouchStart={handleJoyTouchStart}
+        onTouchMove={handleJoyTouchMove}
+        onTouchEnd={handleJoyTouchEnd}
+        onTouchCancel={handleJoyTouchEnd}
         onPointerDown={handleJoyPointerDown}
         onPointerMove={handleJoyPointerMove}
         onPointerUp={handleJoyPointerUp}
@@ -931,6 +1117,10 @@ export function MobileControls() {
         ref={rightZoneRef}
         className="absolute top-0 right-0 bottom-0 w-1/2 pointer-events-auto touch-none select-none"
         style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+        onTouchStart={handleLookTouchStart}
+        onTouchMove={handleLookTouchMove}
+        onTouchEnd={handleLookTouchEnd}
+        onTouchCancel={handleLookTouchEnd}
         onPointerDown={handleLookPointerDown}
         onPointerMove={handleLookPointerMove}
         onPointerUp={handleLookPointerUp}
@@ -956,6 +1146,12 @@ export function MobileControls() {
             <button
               type="button"
               className="bg-gradient-to-r from-amber-500 via-yellow-400 to-orange-500 text-slate-950 font-black text-sm sm:text-base px-6 py-2.5 rounded-2xl shadow-[0_0_25px_rgba(250,204,21,0.8)] border-2 border-white/60 hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-2 animate-bounce"
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                liveInput.jumpFromBus = true;
+                setInput({ jumpFromBus: true });
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 liveInput.jumpFromBus = true;
@@ -992,6 +1188,12 @@ export function MobileControls() {
                     ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-cyan-500/50'
                     : 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-emerald-500/50'
                 }`}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  liveInput.toggleGlider = true;
+                  setInput({ toggleGlider: true });
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   liveInput.toggleGlider = true;
@@ -1102,7 +1304,7 @@ export function MobileControls() {
             <button 
               type="button"
               disabled={!isAbilityReady && !isBuffActive}
-              className={`absolute w-13 h-13 sm:w-16 sm:h-16 rounded-full flex flex-col items-center justify-center text-white shadow-2xl transition-all active:scale-95 ${
+              className={`absolute w-13 h-13 sm:w-16 sm:h-16 rounded-full flex flex-col items-center justify-center text-white shadow-2xl transition-all active:scale-95 select-none ${
                 isBuffActive
                   ? 'bg-gradient-to-br from-amber-500 to-orange-600 ring-4 ring-amber-400/80 shadow-[0_0_25px_rgba(245,158,11,0.9)] animate-pulse'
                   : isAbilityReady
@@ -1111,6 +1313,22 @@ export function MobileControls() {
                     : 'bg-gradient-to-br from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 shadow-[0_0_15px_rgba(168,85,247,0.6)] cursor-pointer'
                   : 'bg-slate-800/90 text-slate-400 cursor-not-allowed opacity-80'
               }`}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (isAbilityReady) {
+                  liveInput.useAbility = true;
+                  setInput({ useAbility: true });
+                  setIsAbilityActive(true);
+                }
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                liveInput.useAbility = false;
+                setInput({ useAbility: false });
+                setIsAbilityActive(false);
+              }}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 if (isAbilityReady) {
@@ -1133,19 +1351,19 @@ export function MobileControls() {
               }}
             >
               {isBuffActive ? (
-                <div className="flex flex-col items-center justify-center">
+                <div className="flex flex-col items-center justify-center pointer-events-none">
                   <span className="text-lg sm:text-xl animate-bounce">{abilityInfo.icon}</span>
                   <span className="text-[8px] sm:text-[9px] font-black text-slate-950 bg-amber-300 px-1 rounded tracking-tighter">
                     {remainingBuffSec.toFixed(1)}s
                   </span>
                 </div>
               ) : isAbilityReady ? (
-                <div className="flex flex-col items-center justify-center">
+                <div className="flex flex-col items-center justify-center pointer-events-none">
                   <Zap size={18} className="text-purple-100 drop-shadow sm:w-5 sm:h-5" />
                   <span className="text-[8px] sm:text-[10px] font-black tracking-wider uppercase text-purple-100">READY</span>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center">
+                <div className="flex flex-col items-center justify-center pointer-events-none">
                   <span className="text-sm sm:text-base opacity-75">{abilityInfo.icon}</span>
                   <span className="text-[9px] sm:text-[10px] font-mono font-black text-purple-300">
                     {remainingCdSec.toFixed(1)}s
@@ -1155,7 +1373,7 @@ export function MobileControls() {
             </button>
 
             {/* Charge percentage floating mini-badge */}
-            <div className={`absolute -top-1 -right-1 text-[8px] sm:text-[9px] font-black px-1 sm:px-1.5 py-0.5 rounded-full border shadow-md ${
+            <div className={`absolute -top-1 -right-1 text-[8px] sm:text-[9px] font-black px-1 sm:px-1.5 py-0.5 rounded-full border shadow-md pointer-events-none ${
               isBuffActive
                 ? 'bg-amber-500 text-slate-950 border-amber-300'
                 : isAbilityReady
@@ -1178,6 +1396,12 @@ export function MobileControls() {
                 <button
                   type="button"
                   className="w-12 h-12 sm:w-15 sm:h-15 rounded-full flex flex-col items-center justify-center text-white shadow-xl transition-all border-2 active:scale-95 cursor-pointer bg-gradient-to-br from-blue-500 to-cyan-500 border-cyan-200 ring-4 ring-cyan-400/80 shadow-[0_0_20px_rgba(6,182,212,0.9)] animate-pulse"
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    liveInput.toggleGlider = true;
+                    setInput({ toggleGlider: true });
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     liveInput.toggleGlider = true;
@@ -1196,7 +1420,7 @@ export function MobileControls() {
             );
           })()}
 
-          {/* Dodge Roll Button (ローリング / 回避) */}
+          {/* Dedicated Jump / Roll Button for Mobile/iPad */}
           <div className="relative flex items-center justify-center">
             {/* SVG Circular Progress Ring */}
             <svg className="w-14 h-14 sm:w-18 sm:h-18 -rotate-90 pointer-events-none drop-shadow-md" viewBox="0 0 68 68">
@@ -1219,37 +1443,30 @@ export function MobileControls() {
             <button
               type="button"
               disabled={!isRollReady}
-              className={`absolute w-11 h-11 sm:w-14 sm:h-14 rounded-full flex flex-col items-center justify-center text-white shadow-xl transition-all border-2 border-cyan-400/50 active:scale-95 ${
+              className={`absolute w-11 h-11 sm:w-14 sm:h-14 rounded-full flex flex-col items-center justify-center text-white shadow-xl transition-all border-2 border-cyan-400/50 active:scale-95 select-none ${
                 isRollReady
                   ? isRollingActive
                     ? 'bg-cyan-600 scale-95 ring-4 ring-cyan-400/80 shadow-[0_0_18px_rgba(6,182,212,0.9)]'
                     : 'bg-gradient-to-br from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 shadow-[0_0_12px_rgba(6,182,212,0.6)] cursor-pointer'
                   : 'bg-slate-800/85 text-slate-500 cursor-not-allowed opacity-75'
               }`}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (isRollReady) {
+                  handleMobileJumpAction();
+                }
+              }}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 if (isRollReady) {
-                  liveInput.isRolling = true;
-                  setInput({ isRolling: true });
-                  setIsRollingActive(true);
+                  handleMobileJumpAction();
                 }
-              }}
-              onPointerUp={(e) => {
-                e.stopPropagation();
-                liveInput.isRolling = false;
-                setInput({ isRolling: false });
-                setIsRollingActive(false);
-              }}
-              onPointerCancel={(e) => {
-                e.stopPropagation();
-                liveInput.isRolling = false;
-                setInput({ isRolling: false });
-                setIsRollingActive(false);
               }}
             >
               <Wind size={16} className="text-cyan-100 sm:w-5 sm:h-5" />
               <span className="text-[8px] sm:text-[9px] font-black tracking-tight uppercase mt-0.5">
-                {isRollReady ? 'ROLL' : `${remainingRollCdSec.toFixed(1)}s`}
+                {isRollReady ? 'JUMP' : `${remainingRollCdSec.toFixed(1)}s`}
               </span>
             </button>
             <div className="absolute -bottom-2 text-[7px] sm:text-[8px] font-black bg-slate-900/90 text-cyan-300 px-1 rounded border border-cyan-500/40 pointer-events-none">
@@ -1261,7 +1478,7 @@ export function MobileControls() {
           <div className="relative">
             <button 
               type="button"
-              className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex flex-col items-center justify-center text-white shadow-xl transition-all border-2 border-emerald-300/40 active:scale-95 cursor-pointer ${
+              className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex flex-col items-center justify-center text-white shadow-xl transition-all border-2 border-emerald-300/40 active:scale-95 cursor-pointer select-none ${
                 myPlayer.heals > 0 
                   ? isHealingActive 
                     ? 'bg-emerald-600 scale-95 ring-4 ring-emerald-400/50' 
@@ -1269,6 +1486,22 @@ export function MobileControls() {
                   : 'bg-slate-700/60 opacity-40 cursor-not-allowed'
               }`}
               disabled={myPlayer.heals <= 0}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (myPlayer.heals > 0) {
+                  liveInput.isHealing = true;
+                  setInput({ isHealing: true });
+                  setIsHealingActive(true);
+                }
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                liveInput.isHealing = false;
+                setInput({ isHealing: false });
+                setIsHealingActive(false);
+              }}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 if (myPlayer.heals > 0) {
@@ -1294,7 +1527,7 @@ export function MobileControls() {
               <span className="text-[8px] sm:text-[9px] font-black tracking-tighter uppercase">Heal</span>
             </button>
             {myPlayer.heals > 0 && (
-              <div className="absolute -top-1 -right-1 bg-slate-900 text-emerald-400 text-[10px] sm:text-xs font-black w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center border-2 border-emerald-400 shadow-md">
+              <div className="absolute -top-1 -right-1 bg-slate-900 text-emerald-400 text-[10px] sm:text-xs font-black w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center border-2 border-emerald-400 shadow-md pointer-events-none">
                 {myPlayer.heals}
               </div>
             )}
@@ -1304,11 +1537,16 @@ export function MobileControls() {
           <div className="relative flex items-center justify-center">
             <button
               type="button"
-              className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex flex-col items-center justify-center text-white shadow-xl transition-all border-2 active:scale-95 cursor-pointer ${
+              className={`w-11 h-11 sm:w-14 sm:h-14 rounded-full flex flex-col items-center justify-center text-white shadow-xl transition-all border-2 active:scale-95 cursor-pointer select-none ${
                 isZoomedLocal
                   ? 'bg-cyan-500 border-cyan-200 ring-4 ring-cyan-400/80 shadow-[0_0_20px_rgba(6,182,212,0.9)] scale-95'
                   : 'bg-slate-800/90 hover:bg-slate-700/90 border-cyan-400/50 text-cyan-100'
               }`}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleZoom();
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 toggleZoom();
@@ -1334,6 +1572,20 @@ export function MobileControls() {
                 ? 'bg-red-600 scale-95 ring-6 ring-red-400/80 shadow-[0_0_35px_rgba(239,68,68,0.95)]' 
                 : 'bg-gradient-to-br from-red-500 to-rose-700 hover:from-red-400 hover:to-rose-600 shadow-[0_0_20px_rgba(239,68,68,0.7)]'
             }`}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              liveInput.isShooting = true;
+              setInput({ isShooting: true });
+              setIsShootingActive(true);
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              liveInput.isShooting = false;
+              setInput({ isShooting: false });
+              setIsShootingActive(false);
+            }}
             onPointerDown={(e) => {
               e.stopPropagation();
               liveInput.isShooting = true;
