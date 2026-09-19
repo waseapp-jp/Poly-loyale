@@ -129,28 +129,45 @@ export async function loadOrCreateUserProfile(user: User): Promise<UserProfileDa
     const docRef = doc(db, 'users', user.uid);
     const snap = await getDoc(docRef);
 
+    let profile: UserProfileData;
+
     if (snap.exists()) {
-      return snap.data() as UserProfileData;
+      profile = snap.data() as UserProfileData;
+    } else {
+      profile = {
+        userId: user.uid,
+        displayName: user.displayName || `Player_${user.uid.slice(0, 5)}`,
+        email: user.email || '',
+        photoURL: user.photoURL || '',
+        totalWins: 0,
+        totalKills: 0,
+        totalDeaths: 0,
+        totalMatches: 0,
+        rating: 2000,
+        rankPoints: 0,
+        favoriteClass: 'assault',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await setDoc(docRef, profile);
     }
 
-    const newProfile: UserProfileData = {
-      userId: user.uid,
-      displayName: user.displayName || 'Player',
-      email: user.email || '',
-      photoURL: user.photoURL || '',
-      totalWins: 0,
-      totalKills: 0,
-      totalDeaths: 0,
-      totalMatches: 0,
-      rating: 2000,
-      rankPoints: 0,
-      favoriteClass: 'assault',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    // Always ensure user is indexed in public leaderboard collection so they can be searched by display name
+    try {
+      const lbRef = doc(db, 'leaderboard', user.uid);
+      await setDoc(lbRef, {
+        userId: user.uid,
+        displayName: profile.displayName,
+        totalWins: profile.totalWins || 0,
+        totalKills: profile.totalKills || 0,
+        rating: profile.rating || 2000,
+        updatedAt: profile.updatedAt,
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Leaderboard sync note:', e);
+    }
 
-    await setDoc(docRef, newProfile);
-    return newProfile;
+    return profile;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, userPath);
   }
@@ -329,13 +346,17 @@ export async function searchUserByIdOrName(searchQuery: string): Promise<UserPro
   if (!queryTrimmed) return null;
 
   try {
-    // 1. First try direct match by UID
-    const directDoc = await getDoc(doc(db, 'users', queryTrimmed));
-    if (directDoc.exists()) {
-      return directDoc.data() as UserProfileData;
+    // 1. First try direct match by UID in users collection
+    try {
+      const directDoc = await getDoc(doc(db, 'users', queryTrimmed));
+      if (directDoc.exists()) {
+        return directDoc.data() as UserProfileData;
+      }
+    } catch (e) {
+      console.warn('Direct UID search note:', e);
     }
 
-    // 2. Query leaderboard/users by displayName match
+    // 2. Query leaderboard by exact displayName
     const q = query(collection(db, 'leaderboard'), where('displayName', '==', queryTrimmed), limit(1));
     const snap = await getDocs(q);
     if (!snap.empty) {
@@ -345,6 +366,24 @@ export async function searchUserByIdOrName(searchQuery: string): Promise<UserPro
         return userDoc.data() as UserProfileData;
       }
     }
+
+    // 3. Fallback: Case-insensitive or partial match search across leaderboard entries
+    const lbSnap = await getDocs(query(collection(db, 'leaderboard'), limit(100)));
+    const matchedDoc = lbSnap.docs.find(d => {
+      const data = d.data();
+      const name = (data.displayName || '').toLowerCase();
+      const target = queryTrimmed.toLowerCase();
+      return name === target || data.userId === queryTrimmed || name.includes(target);
+    });
+
+    if (matchedDoc) {
+      const match = matchedDoc.data();
+      const userDoc = await getDoc(doc(db, 'users', match.userId));
+      if (userDoc.exists()) {
+        return userDoc.data() as UserProfileData;
+      }
+    }
+
     return null;
   } catch (err) {
     console.warn('User search error:', err);
@@ -378,26 +417,37 @@ export async function fetchFriendRequests(userId: string): Promise<FriendRequest
 
 // Send friend request
 export async function sendFriendRequest(fromUser: UserProfileData, targetUid: string): Promise<{ success: boolean; message: string }> {
-  if (fromUser.userId === targetUid) {
+  const cleanTargetUid = targetUid.trim();
+  if (!cleanTargetUid) {
+    return { success: false, message: 'IDが無効です' };
+  }
+
+  if (fromUser.userId === cleanTargetUid) {
     return { success: false, message: '自分自身にフレンド申請は送れません' };
   }
 
   try {
+    // Check if target user exists
+    const targetDoc = await getDoc(doc(db, 'users', cleanTargetUid));
+    if (!targetDoc.exists()) {
+      return { success: false, message: '指定されたユーザーIDが存在しません' };
+    }
+
     // Check if already friends
-    const friendDoc = await getDoc(doc(db, 'users', fromUser.userId, 'friends', targetUid));
+    const friendDoc = await getDoc(doc(db, 'users', fromUser.userId, 'friends', cleanTargetUid));
     if (friendDoc.exists()) {
       return { success: false, message: '既にフレンドです' };
     }
 
-    const requestId = `${fromUser.userId}_${targetUid}`;
-    const reqRef = doc(db, 'users', targetUid, 'friendRequests', requestId);
+    const requestId = `${fromUser.userId}_${cleanTargetUid}`;
+    const reqRef = doc(db, 'users', cleanTargetUid, 'friendRequests', requestId);
 
     const newReq: FriendRequestData = {
       id: requestId,
       fromUid: fromUser.userId,
       fromName: fromUser.displayName,
       fromPhoto: fromUser.photoURL || '',
-      toUid: targetUid,
+      toUid: cleanTargetUid,
       status: 'pending',
       createdAt: new Date().toISOString(),
     };
@@ -406,7 +456,7 @@ export async function sendFriendRequest(fromUser: UserProfileData, targetUid: st
     return { success: true, message: 'フレンド申請を送信しました！' };
   } catch (err) {
     console.error('Send friend request error:', err);
-    return { success: false, message: 'フレンド申請の送信に失敗しました' };
+    return { success: false, message: 'フレンド申請の送信に失敗しました（ネットワークまたは権限を確認してください）' };
   }
 }
 

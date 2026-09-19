@@ -175,13 +175,34 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
         console.error(e);
       }
       setCopiedUid(true);
-      setActionMessage('📋 ユーザーIDをコピーしました！everychatで貼り付けて共有できます');
+      setActionMessage('📋 ユーザーIDをコピーしました！everychatが開きます');
       setTimeout(() => {
         setCopiedUid(false);
         setActionMessage(null);
       }, 5000);
     }
   };
+
+  const handleDirectSendRequest = async (targetUid: string) => {
+    if (!currentUserProfile) return;
+    setLoading(true);
+    try {
+      const res = await sendFriendRequest(currentUserProfile, targetUid);
+      setActionMessage(res.message);
+      setTimeout(() => setActionMessage(null), 4000);
+      if (res.success) {
+        setSearchResult(null);
+        setSearchQuery('');
+        setSearchError('');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const everychatUrl = currentUserProfile?.userId
+    ? `https://everychat-Waseda.web.app/?text=${encodeURIComponent(currentUserProfile.userId)}`
+    : 'https://everychat-Waseda.web.app';
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-fadeIn">
@@ -206,12 +227,12 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
           <div className="flex items-center space-x-2">
             {currentUserProfile && (
               <a
-                href="https://everychat-waseda.web.app"
+                href={everychatUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={handleCopyForEverychat}
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white border border-indigo-400/40 rounded-xl text-xs font-bold shadow-md transition-all active:scale-95"
-                title="IDをコピーして everychat-waseda.web.app を開く"
+                title="IDをコピーして everychat-Waseda.web.app/?text= を開く"
               >
                 <Share2 className="w-3.5 h-3.5 text-blue-200" />
                 <span className="hidden sm:inline">everychatでID共有</span>
@@ -367,12 +388,12 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                     </button>
 
                     <a
-                      href="https://everychat-waseda.web.app"
+                      href={everychatUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={handleCopyForEverychat}
                       className="flex items-center space-x-1 px-2.5 py-1 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white border border-indigo-400/50 rounded-lg text-xs font-extrabold shadow-md hover:shadow-indigo-500/20 transition-all active:scale-95"
-                      title="IDをコピーして everychat-waseda.web.app を開く"
+                      title="IDをコピーして everychat-Waseda.web.app/?text= を開く"
                     >
                       <MessageSquare className="w-3.5 h-3.5 text-blue-200" />
                       <span>everychatで共有</span>
@@ -388,7 +409,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                 <div className="flex items-center justify-between text-[11px] text-slate-400 gap-2 flex-wrap pt-1 border-t border-amber-500/20">
                   <span>友達にこのIDを共有すると、直接フレンド申請を送ってもらえます。</span>
                   <a
-                    href="https://everychat-waseda.web.app"
+                    href={everychatUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={handleCopyForEverychat}
@@ -428,8 +449,22 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
               {/* Search Error */}
               {searchError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded-xl">
-                  {searchError}
+                <div className="p-3.5 bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-xl space-y-2">
+                  <div>{searchError}</div>
+                  {searchQuery.trim().length >= 6 && (
+                    <div className="pt-2 border-t border-red-500/20 flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-slate-300">ID 「{searchQuery.trim()}」 に直接フレンド申請を送りますか？</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDirectSendRequest(searchQuery.trim())}
+                        disabled={loading}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg shadow-md transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>直接フレンド申請を送信</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

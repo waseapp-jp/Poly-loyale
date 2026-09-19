@@ -601,7 +601,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                   ID: {profile.userId || user.uid}
                 </span>
                 <a
-                  href="https://everychat-waseda.web.app"
+                  href={`https://everychat-Waseda.web.app/?text=${encodeURIComponent(profile.userId || user.uid)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => {
@@ -615,7 +615,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                     }
                   }}
                   className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold flex items-center gap-1 transition-all active:scale-95 shadow-md"
-                  title="ユーザーIDをコピーして everychat-waseda.web.app を開く"
+                  title="ユーザーIDをコピーして everychat-Waseda.web.app/?text= を開く"
                 >
                   <MessageSquare size={12} />
                   <span>everychatで共有</span>
