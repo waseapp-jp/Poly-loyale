@@ -86,14 +86,12 @@ service cloud.firestore {
 
     // 1b. Friends Subcollection
     match /users/{userId}/friends/{friendId} {
-      allow read, write: if isSignedIn() && (request.auth.uid == userId || request.auth.uid == friendId);
+      allow read, write: if isSignedIn();
     }
 
     // 1c. Friend Requests Subcollection
     match /users/{userId}/friendRequests/{requestId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || resource.data.fromUid == request.auth.uid);
-      allow create: if isSignedIn() && request.auth.uid == incoming().fromUid && incoming().toUid == userId;
-      allow update, delete: if isSignedIn() && (request.auth.uid == userId || request.auth.uid == existing().fromUid);
+      allow read, write: if isSignedIn();
     }
 
     

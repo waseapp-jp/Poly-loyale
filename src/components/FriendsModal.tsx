@@ -54,13 +54,29 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   const { sendP2PInvite } = useGameStore();
 
+  const user = auth.currentUser;
+  const activeProfile: UserProfileData | null = currentUserProfile || (user ? {
+    userId: user.uid,
+    displayName: user.displayName || `Player_${user.uid.slice(0, 5)}`,
+    email: user.email || '',
+    photoURL: user.photoURL || '',
+    totalWins: 0,
+    totalKills: 0,
+    totalDeaths: 0,
+    totalMatches: 0,
+    rating: 2000,
+    rankPoints: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } : null);
+
   const loadData = async () => {
-    if (!currentUserProfile?.userId) return;
+    if (!activeProfile?.userId) return;
     setLoading(true);
     try {
       const [fList, rList] = await Promise.all([
-        fetchFriends(currentUserProfile.userId),
-        fetchFriendRequests(currentUserProfile.userId)
+        fetchFriends(activeProfile.userId),
+        fetchFriendRequests(activeProfile.userId)
       ]);
       setFriends(fList);
       setRequests(rList);
@@ -75,7 +91,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     if (isOpen) {
       loadData();
     }
-  }, [isOpen, currentUserProfile]);
+  }, [isOpen, activeProfile?.userId]);
 
   if (!isOpen) return null;
 
@@ -100,12 +116,16 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   };
 
   const handleSendRequest = async (targetUid: string) => {
-    if (!currentUserProfile) return;
+    if (!activeProfile) {
+      setActionMessage('⚠️ フレンド申請を送信するにはログインが必要です');
+      setTimeout(() => setActionMessage(null), 3000);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await sendFriendRequest(currentUserProfile, targetUid);
+      const res = await sendFriendRequest(activeProfile, targetUid);
       setActionMessage(res.message);
-      setTimeout(() => setActionMessage(null), 3000);
+      setTimeout(() => setActionMessage(null), 4000);
       if (res.success) {
         setSearchResult(null);
         setSearchQuery('');
@@ -116,10 +136,10 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   };
 
   const handleAcceptRequest = async (req: FriendRequestData) => {
-    if (!currentUserProfile) return;
+    if (!activeProfile) return;
     setLoading(true);
     try {
-      const ok = await acceptFriendRequest(req, currentUserProfile);
+      const ok = await acceptFriendRequest(req, activeProfile);
       if (ok) {
         setActionMessage(`✅ ${req.fromName} さんとフレンドになりました！`);
         await loadData();
@@ -131,9 +151,9 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   };
 
   const handleRejectRequest = async (req: FriendRequestData) => {
-    if (!currentUserProfile) return;
+    if (!activeProfile) return;
     try {
-      await rejectFriendRequest(currentUserProfile.userId, req.id);
+      await rejectFriendRequest(activeProfile.userId, req.id);
       setRequests(prev => prev.filter(r => r.id !== req.id));
     } catch (err) {
       console.error(err);
@@ -141,9 +161,9 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   };
 
   const handleRemoveFriend = async (friendUid: string, name: string) => {
-    if (!currentUserProfile || !confirm(`${name} さんをフレンド一覧から削除しますか？`)) return;
+    if (!activeProfile || !confirm(`${name} さんをフレンド一覧から削除しますか？`)) return;
     try {
-      await removeFriend(currentUserProfile.userId, friendUid);
+      await removeFriend(activeProfile.userId, friendUid);
       setFriends(prev => prev.filter(f => f.friendUid !== friendUid));
       setActionMessage(`${name} さんを削除しました`);
       setTimeout(() => setActionMessage(null), 2500);
@@ -153,24 +173,24 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   };
 
   const handleInviteP2PDuel = (friend: FriendData) => {
-    if (!currentUserProfile) return;
-    sendP2PInvite(friend.friendUid, currentUserProfile.displayName, currentUserProfile.userId);
+    if (!activeProfile) return;
+    sendP2PInvite(friend.friendUid, activeProfile.displayName, activeProfile.userId);
     setActionMessage(`⚡ ${friend.displayName} さんへP2P 1v1対戦招待を送信しました！`);
     setTimeout(() => setActionMessage(null), 3000);
   };
 
   const copyOwnUid = () => {
-    if (currentUserProfile?.userId) {
-      navigator.clipboard.writeText(currentUserProfile.userId);
+    if (activeProfile?.userId) {
+      navigator.clipboard.writeText(activeProfile.userId);
       setCopiedUid(true);
       setTimeout(() => setCopiedUid(false), 2000);
     }
   };
 
   const handleCopyForEverychat = () => {
-    if (currentUserProfile?.userId) {
+    if (activeProfile?.userId) {
       try {
-        navigator.clipboard.writeText(currentUserProfile.userId);
+        navigator.clipboard.writeText(activeProfile.userId);
       } catch (e) {
         console.error(e);
       }
@@ -184,10 +204,14 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   };
 
   const handleDirectSendRequest = async (targetUid: string) => {
-    if (!currentUserProfile) return;
+    if (!activeProfile) {
+      setActionMessage('⚠️ フレンド申請を送信するにはログインが必要です');
+      setTimeout(() => setActionMessage(null), 3000);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await sendFriendRequest(currentUserProfile, targetUid);
+      const res = await sendFriendRequest(activeProfile, targetUid);
       setActionMessage(res.message);
       setTimeout(() => setActionMessage(null), 4000);
       if (res.success) {
@@ -200,8 +224,8 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     }
   };
 
-  const everychatUrl = currentUserProfile?.userId
-    ? `https://everychat-Waseda.web.app/?text=${encodeURIComponent(currentUserProfile.userId)}`
+  const everychatUrl = activeProfile?.userId
+    ? `https://everychat-Waseda.web.app/?text=${encodeURIComponent(activeProfile.userId)}`
     : 'https://everychat-Waseda.web.app';
 
   return (
@@ -225,7 +249,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            {currentUserProfile && (
+            {activeProfile && (
               <a
                 href={everychatUrl}
                 target="_blank"

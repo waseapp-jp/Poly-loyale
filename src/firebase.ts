@@ -474,11 +474,27 @@ export async function sendFriendRequest(fromUser: UserProfileData, targetInput: 
       return { success: false, message: '自分自身にフレンド申請は送れません' };
     }
 
-    // Check if target user exists in Firestore
+    // Check if target user exists in Firestore or input is a valid UID format
     if (!targetProfile) {
-      // Create request even if profile was not fetched directly, as long as targetUid looks like valid string
-      // But verify user exists
-      return { success: false, message: `ユーザー 「${cleanInput}」 が見つかりませんでした。正しいIDまたは名前をご確認ください。` };
+      if (cleanInput.length >= 10 && /^[a-zA-Z0-9_\-]+$/.test(cleanInput)) {
+        targetUid = cleanInput;
+        targetProfile = {
+          userId: cleanInput,
+          displayName: `ID: ${cleanInput.slice(0, 8)}...`,
+          email: '',
+          photoURL: '',
+          totalWins: 0,
+          totalKills: 0,
+          totalDeaths: 0,
+          totalMatches: 0,
+          rating: 2000,
+          rankPoints: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        return { success: false, message: `ユーザー 「${cleanInput}」 が見つかりませんでした。正しいIDまたは名前をご確認ください。` };
+      }
     }
 
     // Check if already friends
