@@ -1,0 +1,607 @@
+import { create } from 'zustand';
+import { io, Socket } from 'socket.io-client';
+import { GameState, PlayerState, ClientInput, CharacterClass, AttackEvent, DamagePopupEvent } from './types.js';
+import { playHitSound, playShootSound, playEliminationSound } from './utils/audio';
+
+import { p2pManager, P2PState, P2PSignal } from './utils/p2pConnection';
+
+export interface DamageIndicator {
+  id: string;
+  angle: number;
+  timestamp: number;
+}
+
+export interface P2PInviteNotification {
+  inviterUid: string;
+  inviterName: string;
+  p2pRoomId: string;
+  inviterSocketId?: string;
+}
+
+type AttackListener = (event: AttackEvent) => void;
+type DamageListener = (event: DamagePopupEvent) => void;
+
+const attackListeners = new Set<AttackListener>();
+const damageListeners = new Set<DamageListener>();
+
+export const onAttackEvent = (cb: AttackListener) => {
+  attackListeners.add(cb);
+  return () => { attackListeners.delete(cb); };
+};
+
+export const triggerAttackEvent = (event: AttackEvent) => {
+  attackListeners.forEach(cb => cb(event));
+};
+
+export const onDamageDealt = (cb: DamageListener) => {
+  damageListeners.add(cb);
+  return () => { damageListeners.delete(cb); };
+};
+
+export const triggerDamagePopup = (event: DamagePopupEvent) => {
+  damageListeners.forEach(cb => cb(event));
+};
+
+export interface LiveInput {
+  x: number;
+  y: number;
+  z: number;
+  ry: number;
+  pitch: number;
+  aimTarget?: { x: number; y: number; z: number };
+  moveX: number;
+  moveY: number;
+  isShooting: boolean;
+  isHealing: boolean;
+  useAbility: boolean;
+  useAbility2?: boolean;
+  isRolling: boolean;
+  isZoomed: boolean;
+  jumpFromBus?: boolean;
+  toggleGlider?: boolean;
+  isTargetLocked?: boolean;
+}
+
+export const liveInput: LiveInput = {
+  x: 0,
+  y: 1,
+  z: 0,
+  ry: 0,
+  pitch: 0.0,
+  aimTarget: { x: 0, y: 1.4, z: -50 },
+  moveX: 0,
+  moveY: 0,
+  isShooting: false,
+  isHealing: false,
+  useAbility: false,
+  isRolling: false,
+  isZoomed: false,
+  jumpFromBus: false,
+  toggleGlider: false,
+  isTargetLocked: false,
+};
+
+export const attackStatus = {
+  isTargetLocked: false,
+};
+
+let lastSentInput: {
+  x: number;
+  y: number;
+  z: number;
+  ry: number;
+  pitch: number;
+} | null = null;
+let lastSentTime = 0;
+
+interface StoreState {
+  socket: Socket | null;
+  gameState: GameState | null;
+  myId: string | null;
+  input: ClientInput;
+  showHitMarker: boolean;
+  showDamageFlash: boolean;
+  damageIndicators: DamageIndicator[];
+  spectateTargetId: string | null;
+  localLastRollTime: number;
+  localLastAbilityTime: number;
+  localLastAbility2Time: number;
+  localLastHealTime: number;
+
+  // P2P & Social fields
+  p2pState: P2PState;
+  p2pPing: number;
+  incomingP2PInvite: P2PInviteNotification | null;
+  p2pNotice: string | null;
+
+  connect: (
+    mode: 'casual' | 'ranked' | 'password' | 'team' | 'bot' | 'p2p_duel',
+    password?: string,
+    characterClass?: CharacterClass,
+    botCount?: number,
+    team?: 'red' | 'blue' | 'auto',
+    teamMatchType?: 'pvp' | 'bot',
+    playerName?: string,
+    p2pRoomId?: string
+  ) => void;
+  setInput: (input: Partial<ClientInput>) => void;
+  sendInput: () => void;
+  respawn: () => void;
+  leaveGame: () => void;
+  setSpectateTargetId: (id: string | null) => void;
+  cycleSpectate: (direction: 1 | -1) => void;
+
+  // P2P Action handlers
+  registerP2PUser: (userId: string) => void;
+  sendP2PInvite: (targetUid: string, inviterName: string, inviterUid: string) => string;
+  acceptP2PInvite: (invite: P2PInviteNotification, characterClass?: CharacterClass) => void;
+  declineP2PInvite: (invite: P2PInviteNotification, declinerName: string) => void;
+  clearP2PNotice: () => void;
+}
+
+export const useGameStore = create<StoreState>((set, get) => ({
+  socket: null,
+  gameState: null,
+  myId: null,
+  showHitMarker: false,
+  showDamageFlash: false,
+  damageIndicators: [],
+  spectateTargetId: null,
+  localLastRollTime: 0,
+  localLastAbilityTime: 0,
+  localLastAbility2Time: 0,
+  localLastHealTime: 0,
+  p2pState: 'idle',
+  p2pPing: 0,
+  incomingP2PInvite: null,
+  p2pNotice: null,
+  input: {
+    x: 0,
+    y: 1,
+    z: 0,
+    ry: 0,
+    moveX: 0,
+    moveY: 0,
+    isShooting: false,
+    isHealing: false,
+    useAbility: false,
+    isRolling: false,
+    isZoomed: false,
+  },
+  connect: (mode, password, characterClass = 'melee', botCount, team, teamMatchType = 'pvp', playerName, p2pRoomId) => {
+    if (get().socket) {
+      get().socket?.disconnect();
+    }
+
+    let profile = JSON.parse(localStorage.getItem('poly_profile') || 'null');
+    if (!profile) {
+      profile = { wins: 0, streak: 0, rankPoints: 0, rating: null };
+      localStorage.setItem('poly_profile', JSON.stringify(profile));
+    }
+    const rating = profile.rating || profile.rankPoints;
+    const resolvedPlayerName = playerName || profile.displayName || localStorage.getItem('poly_player_name') || '';
+
+    const serverUrl = import.meta.env.VITE_SERVER_URL || undefined;
+    const socket = io(serverUrl, {
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.on('connect', () => {
+      console.log('Connected to server');
+      const currentUserUid = localStorage.getItem('poly_user_uid');
+      if (currentUserUid) {
+        socket.emit('p2p_register_user', { userId: currentUserUid });
+      }
+
+      socket.emit('join', {
+        mode,
+        password,
+        characterClass,
+        rating,
+        botCount,
+        team,
+        teamMatchType,
+        playerName: resolvedPlayerName,
+        p2pRoomId,
+      });
+    });
+
+    // P2P Event Listeners
+    socket.on('p2p_invite_received', (data: P2PInviteNotification) => {
+      set({ incomingP2PInvite: data });
+    });
+
+    socket.on('p2p_accepted', ({ p2pRoomId, acceptorName }: { p2pRoomId: string; acceptorName: string }) => {
+      set({ p2pNotice: `⚔️ ${acceptorName || 'フレンド'} が1v1 P2P対戦に参加しました！` });
+      // Host connects to the p2p_duel room
+      get().connect('p2p_duel', undefined, characterClass, 0, undefined, 'pvp', resolvedPlayerName, p2pRoomId);
+
+      // Start WebRTC connection as Host
+      p2pManager.initAsHost(
+        (signal) => {
+          socket.emit('p2p_signal', { signal });
+        },
+        (p2pData) => {
+          // Handle direct WebRTC incoming inputs/messages
+          if (p2pData && p2pData.type === 'input') {
+            socket.emit('input', p2pData.input);
+          }
+        },
+        (p2pState, pingMs) => {
+          set({ p2pState, p2pPing: pingMs });
+        }
+      );
+    });
+
+    socket.on('p2p_declined', ({ declinerName }: { declinerName: string }) => {
+      set({ p2pNotice: `❌ ${declinerName || 'フレンド'} は1v1 P2P対戦の招待を辞退しました` });
+    });
+
+    socket.on('p2p_signal_received', ({ signal }: { senderSocketId: string; signal: P2PSignal }) => {
+      p2pManager.handleIncomingSignal(signal);
+    });
+
+    socket.on('p2p_invite_sent', ({ success, reason }: { success: boolean; reason?: string }) => {
+      if (!success && reason) {
+        set({ p2pNotice: `⚠️ 招待の送信に失敗: ${reason}` });
+      }
+    });
+
+    socket.on('init', ({ id, state }: { id: string, state: GameState }) => {
+      set({ myId: id, gameState: state, spectateTargetId: null });
+      // Initialize local position
+      const myPlayer = state.players[id];
+      if (myPlayer) {
+        liveInput.x = myPlayer.x;
+        liveInput.y = myPlayer.y;
+        liveInput.z = myPlayer.z;
+        liveInput.ry = myPlayer.ry;
+        set((prev) => ({
+          input: {
+            ...prev.input,
+            x: myPlayer.x,
+            y: myPlayer.y,
+            z: myPlayer.z,
+            ry: myPlayer.ry,
+          }
+        }));
+      }
+    });
+
+    socket.on('respawned', ({ x, y, z }: { x: number, y: number, z: number }) => {
+      liveInput.x = x;
+      liveInput.y = y;
+      liveInput.z = z;
+      set({ spectateTargetId: null });
+    });
+
+    socket.on('tookDamage', ({ attackerX, attackerZ }) => {
+      const { myId, gameState } = get();
+      if (!myId || !gameState) return;
+      const myPlayer = gameState.players[myId];
+      if (!myPlayer) return;
+
+      const dx = attackerX - myPlayer.x;
+      const dz = attackerZ - myPlayer.z;
+      const angle = Math.atan2(dx, -dz);
+      
+      const id = Math.random().toString();
+      set(state => ({
+        damageIndicators: [...state.damageIndicators, { id, angle, timestamp: Date.now() }],
+        showDamageFlash: true
+      }));
+      setTimeout(() => set({ showDamageFlash: false }), 300);
+    });
+
+    socket.on('stateUpdate', (state: Partial<GameState> & { activePlayerIds?: string[] }) => {
+      const { myId, spectateTargetId } = get();
+      // If dead and spectating a player that died, auto-cycle
+      if (spectateTargetId && state.players && state.players[spectateTargetId]?.isDead) {
+        const otherAlive = Object.values(state.players).filter(p => !p.isDead && p.id !== myId);
+        set({ spectateTargetId: otherAlive.length > 0 ? otherAlive[0].id : null });
+      }
+      set(prev => {
+        if (!prev.gameState) return { gameState: state as GameState };
+
+        // Seamlessly merge incoming player delta updates with existing player metadata
+        let mergedPlayers = prev.gameState.players;
+        if (state.players) {
+          mergedPlayers = { ...prev.gameState.players };
+          for (const pid in state.players) {
+            const inc = state.players[pid];
+            if (myId && pid === myId && inc.score !== undefined) {
+              const oldScore = prev.gameState.players[myId]?.score || 0;
+              if (inc.score > oldScore) {
+                playEliminationSound();
+              }
+            }
+            mergedPlayers[pid] = {
+              ...(prev.gameState.players[pid] || {}),
+              ...inc,
+              isRolling: !!inc.isRolling,
+              isFlying: !!inc.isFlying,
+              hasShield: !!inc.hasShield,
+              isInvulnerable: !!inc.isInvulnerable,
+              isHealing: !!inc.isHealing,
+              inBus: !!inc.inBus,
+              isSkydiving: !!inc.isSkydiving,
+              isGliding: !!inc.isGliding,
+            };
+          }
+        }
+
+        // Remove players no longer active in the room
+        if (state.activePlayerIds) {
+          const activeSet = new Set(state.activePlayerIds);
+          for (const pid in mergedPlayers) {
+            if (!activeSet.has(pid)) {
+              delete mergedPlayers[pid];
+            }
+          }
+        } else if (state.players) {
+          for (const pid in prev.gameState.players) {
+            if (!(pid in state.players)) {
+              delete mergedPlayers[pid];
+            }
+          }
+        }
+
+        return {
+          gameState: {
+            ...prev.gameState,
+            ...state,
+            players: mergedPlayers,
+            items: state.items !== undefined ? state.items : prev.gameState.items,
+            bombs: state.bombs !== undefined ? state.bombs : prev.gameState.bombs,
+            obstacles: state.obstacles || prev.gameState.obstacles,
+          }
+        };
+      });
+    });
+
+    socket.on('hitConfirmed', () => {
+      playHitSound();
+      set({ showHitMarker: true });
+      setTimeout(() => set({ showHitMarker: false }), 150);
+    });
+
+    socket.on('playerAttacked', (event: AttackEvent) => {
+      triggerAttackEvent(event);
+      const myId = get().myId;
+      if (myId && event.attackerId !== myId) {
+        const myP = get().gameState?.players[myId];
+        if (myP && !myP.inBus) {
+          const dist = Math.hypot(event.x - myP.x, event.z - myP.z);
+          if (dist <= 50) {
+            playShootSound(event.characterClass, false, dist);
+          }
+        }
+      }
+    });
+
+    socket.on('damageDealt', (event: DamagePopupEvent) => {
+      triggerDamagePopup(event);
+      const myId = get().myId;
+      if (myId && event.attackerId === myId) {
+        playHitSound();
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Disconnected from server');
+      set({ myId: null });
+    });
+
+    set({ socket, spectateTargetId: null });
+  },
+  respawn: () => {
+    const { socket } = get();
+    if (socket && socket.connected) {
+      socket.emit('respawn');
+      set({ spectateTargetId: null });
+    }
+  },
+  leaveGame: () => {
+    const { socket } = get();
+    if (socket) {
+      socket.emit('leaveRoom');
+      socket.disconnect();
+    }
+    liveInput.moveX = 0;
+    liveInput.moveY = 0;
+    liveInput.isShooting = false;
+    liveInput.isHealing = false;
+    liveInput.useAbility = false;
+    liveInput.isRolling = false;
+    liveInput.isZoomed = false;
+    set({
+      socket: null,
+      gameState: null,
+      myId: null,
+      spectateTargetId: null,
+      damageIndicators: [],
+      showDamageFlash: false,
+      showHitMarker: false,
+    });
+  },
+  setSpectateTargetId: (id) => {
+    set({ spectateTargetId: id });
+  },
+  cycleSpectate: (direction) => {
+    const { gameState, myId, spectateTargetId } = get();
+    if (!gameState) return;
+    const alivePlayers = Object.values(gameState.players).filter(p => !p.isDead && p.id !== myId);
+    if (alivePlayers.length === 0) {
+      set({ spectateTargetId: null });
+      return;
+    }
+    const currentIndex = alivePlayers.findIndex(p => p.id === spectateTargetId);
+    if (currentIndex === -1) {
+      set({ spectateTargetId: alivePlayers[0].id });
+    } else {
+      const nextIndex = (currentIndex + direction + alivePlayers.length) % alivePlayers.length;
+      set({ spectateTargetId: alivePlayers[nextIndex].id });
+    }
+  },
+  setInput: (newInput) => {
+    Object.assign(liveInput, newInput);
+    
+    const now = Date.now();
+    const timeUpdates: Partial<StoreState> = {};
+    if (newInput.isRolling) timeUpdates.localLastRollTime = now;
+    if (newInput.useAbility) timeUpdates.localLastAbilityTime = now;
+    if (newInput.useAbility2) timeUpdates.localLastAbility2Time = now;
+    if (newInput.isHealing) timeUpdates.localLastHealTime = now;
+
+    // Only update zustand if shooting/ability/healing/rolling/zoomed changes to avoid 60fps re-render thrashing
+    if (newInput.isShooting !== undefined || newInput.isHealing !== undefined || newInput.useAbility !== undefined || newInput.useAbility2 !== undefined || newInput.isRolling !== undefined || newInput.isZoomed !== undefined || Object.keys(timeUpdates).length > 0) {
+      set((state) => ({ 
+        input: { ...state.input, ...newInput },
+        ...timeUpdates
+      }));
+    }
+  },
+  sendInput: () => {
+    const { socket } = get();
+    if (!socket || !socket.connected) return;
+
+    const roundedX = Math.round(liveInput.x * 10) / 10;
+    const roundedY = Math.round(liveInput.y * 10) / 10;
+    const roundedZ = Math.round(liveInput.z * 10) / 10;
+    const roundedRy = Math.round(liveInput.ry * 100) / 100;
+    const roundedPitch = Math.round(liveInput.pitch * 100) / 100;
+    const isAction = !!(liveInput.isShooting || liveInput.isHealing || liveInput.useAbility || liveInput.useAbility2 || liveInput.isRolling || liveInput.jumpFromBus || liveInput.toggleGlider);
+
+    const now = performance.now();
+    const isOneShotAction = !!(liveInput.useAbility || liveInput.useAbility2 || liveInput.jumpFromBus || liveInput.toggleGlider || liveInput.isShooting);
+    if (now - lastSentTime < 33 && !isOneShotAction) return;
+    // Adaptive send: only send if action occurred, moved/rotated, or 350ms heartbeat elapsed
+    if (!isAction && lastSentInput && (now - lastSentTime < 350)) {
+      const dx = Math.abs(roundedX - lastSentInput.x);
+      const dz = Math.abs(roundedZ - lastSentInput.z);
+      const dry = Math.abs(roundedRy - lastSentInput.ry);
+      const dpitch = Math.abs(roundedPitch - lastSentInput.pitch);
+      if (dx < 0.05 && dz < 0.05 && dry < 0.03 && dpitch < 0.05) {
+        return; // Skip identical static packet to save upstream bandwidth
+      }
+    }
+
+    lastSentTime = now;
+    lastSentInput = {
+      x: roundedX,
+      y: roundedY,
+      z: roundedZ,
+      ry: roundedRy,
+      pitch: roundedPitch,
+    };
+
+    socket.emit('input', {
+      x: roundedX,
+      y: roundedY,
+      z: roundedZ,
+      ry: roundedRy,
+      pitch: roundedPitch,
+      aimTarget: liveInput.aimTarget ? {
+        x: Math.round(liveInput.aimTarget.x * 10) / 10,
+        y: Math.round(liveInput.aimTarget.y * 10) / 10,
+        z: Math.round(liveInput.aimTarget.z * 10) / 10,
+      } : undefined,
+      moveX: Math.round(liveInput.moveX * 10) / 10,
+      moveY: Math.round(liveInput.moveY * 10) / 10,
+      isShooting: liveInput.isShooting,
+      isHealing: liveInput.isHealing,
+      useAbility: liveInput.useAbility,
+      useAbility2: liveInput.useAbility2,
+      isRolling: liveInput.isRolling,
+      jumpFromBus: liveInput.jumpFromBus,
+      toggleGlider: liveInput.toggleGlider,
+    });
+    // One-shot triggers must reset after transmission
+    if (liveInput.toggleGlider) {
+      liveInput.toggleGlider = false;
+    }
+    if (liveInput.jumpFromBus) {
+      liveInput.jumpFromBus = false;
+    }
+  },
+
+  registerP2PUser: (userId: string) => {
+    localStorage.setItem('poly_user_uid', userId);
+    const { socket } = get();
+    if (socket && socket.connected) {
+      socket.emit('p2p_register_user', { userId });
+    }
+  },
+
+  sendP2PInvite: (targetUid: string, inviterName: string, inviterUid: string) => {
+    const p2pRoomId = `p2p_1v1_${inviterUid.slice(0, 5)}_${Date.now().toString(36)}`;
+    const { socket } = get();
+    if (socket && socket.connected) {
+      socket.emit('p2p_invite', {
+        targetUid,
+        inviterName,
+        inviterUid,
+        p2pRoomId,
+      });
+      set({ p2pNotice: '⚡ P2P対戦招待を送信しました...' });
+    } else {
+      // Auto-connect socket if offline
+      get().connect('casual', undefined, 'melee', 0, undefined, 'pvp', inviterName);
+      setTimeout(() => {
+        get().socket?.emit('p2p_invite', { targetUid, inviterName, inviterUid, p2pRoomId });
+        set({ p2pNotice: '⚡ P2P対戦招待を送信しました...' });
+      }, 500);
+    }
+    return p2pRoomId;
+  },
+
+  acceptP2PInvite: (invite: P2PInviteNotification, characterClass = 'melee') => {
+    const { socket } = get();
+    const myProfile = JSON.parse(localStorage.getItem('poly_profile') || '{}');
+    const myName = myProfile.displayName || localStorage.getItem('poly_player_name') || 'Player';
+    const myUid = localStorage.getItem('poly_user_uid') || '';
+
+    if (socket && socket.connected) {
+      socket.emit('p2p_accept', {
+        inviterUid: invite.inviterUid,
+        p2pRoomId: invite.p2pRoomId,
+        acceptorUid: myUid,
+        acceptorName: myName,
+      });
+    }
+
+    set({ incomingP2PInvite: null });
+
+    // Join room as Guest
+    get().connect('p2p_duel', undefined, characterClass, 0, undefined, 'pvp', myName, invite.p2pRoomId);
+
+    // Initialize WebRTC as Guest
+    p2pManager.initAsGuest(
+      (signal) => {
+        get().socket?.emit('p2p_signal', { targetUid: invite.inviterUid, signal });
+      },
+      (p2pData) => {
+        if (p2pData && p2pData.type === 'stateUpdate') {
+          // Direct state update via P2P
+        }
+      },
+      (p2pState, pingMs) => {
+        set({ p2pState, p2pPing: pingMs });
+      }
+    );
+  },
+
+  declineP2PInvite: (invite: P2PInviteNotification, declinerName: string) => {
+    const { socket } = get();
+    if (socket && socket.connected) {
+      socket.emit('p2p_decline', {
+        inviterUid: invite.inviterUid,
+        p2pRoomId: invite.p2pRoomId,
+        declinerName,
+      });
+    }
+    set({ incomingP2PInvite: null });
+  },
+
+  clearP2PNotice: () => set({ p2pNotice: null }),
+}));
