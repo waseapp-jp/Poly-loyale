@@ -167,16 +167,19 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     }
   };
 
-  const shareOnEverychat = () => {
+  const handleCopyForEverychat = () => {
     if (currentUserProfile?.userId) {
-      navigator.clipboard.writeText(currentUserProfile.userId);
+      try {
+        navigator.clipboard.writeText(currentUserProfile.userId);
+      } catch (e) {
+        console.error(e);
+      }
       setCopiedUid(true);
-      setActionMessage('📋 ユーザーIDをコピーし、everychat (everychat-Waseda.web.app) を開きました！');
+      setActionMessage('📋 ユーザーIDをコピーしました！everychatで貼り付けて共有できます');
       setTimeout(() => {
         setCopiedUid(false);
         setActionMessage(null);
       }, 5000);
-      window.open('https://everychat-Waseda.web.app', '_blank');
     }
   };
 
@@ -202,16 +205,19 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
           </div>
           <div className="flex items-center space-x-2">
             {currentUserProfile && (
-              <button
-                onClick={shareOnEverychat}
+              <a
+                href="https://everychat-waseda.web.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleCopyForEverychat}
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white border border-indigo-400/40 rounded-xl text-xs font-bold shadow-md transition-all active:scale-95"
-                title="IDをコピーして everychat-Waseda.web.app を開く"
+                title="IDをコピーして everychat-waseda.web.app を開く"
               >
                 <Share2 className="w-3.5 h-3.5 text-blue-200" />
                 <span className="hidden sm:inline">everychatでID共有</span>
                 <span className="sm:hidden">everychat</span>
                 <ExternalLink className="w-3 h-3 text-indigo-200" />
-              </button>
+              </a>
             )}
             <button
               onClick={onClose}
@@ -360,15 +366,18 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                       <span>{copiedUid ? 'コピー完了!' : 'IDをコピー'}</span>
                     </button>
 
-                    <button
-                      onClick={shareOnEverychat}
+                    <a
+                      href="https://everychat-waseda.web.app"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={handleCopyForEverychat}
                       className="flex items-center space-x-1 px-2.5 py-1 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white border border-indigo-400/50 rounded-lg text-xs font-extrabold shadow-md hover:shadow-indigo-500/20 transition-all active:scale-95"
-                      title="IDをコピーして everychat-Waseda.web.app を開く"
+                      title="IDをコピーして everychat-waseda.web.app を開く"
                     >
                       <MessageSquare className="w-3.5 h-3.5 text-blue-200" />
                       <span>everychatで共有</span>
                       <ExternalLink className="w-3 h-3 text-indigo-200" />
-                    </button>
+                    </a>
                   </div>
                 </div>
 
@@ -378,14 +387,16 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
                 <div className="flex items-center justify-between text-[11px] text-slate-400 gap-2 flex-wrap pt-1 border-t border-amber-500/20">
                   <span>友達にこのIDを共有すると、直接フレンド申請を送ってもらえます。</span>
-                  <button
-                    type="button"
-                    onClick={shareOnEverychat}
+                  <a
+                    href="https://everychat-waseda.web.app"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={handleCopyForEverychat}
                     className="text-xs text-indigo-300 hover:text-indigo-200 font-bold underline flex items-center gap-1 cursor-pointer"
                   >
                     <span>💬 everychatでコミュニティへ共有</span>
                     <ExternalLink className="w-3 h-3" />
-                  </button>
+                  </a>
                 </div>
               </div>
 

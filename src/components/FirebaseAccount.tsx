@@ -600,22 +600,27 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                 <span className="font-mono text-slate-400 bg-slate-900 px-2 py-1 rounded border border-slate-700">
                   ID: {profile.userId || user.uid}
                 </span>
-                <button
-                  type="button"
+                <a
+                  href="https://everychat-waseda.web.app"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   onClick={() => {
                     const uid = profile.userId || user.uid;
                     if (uid) {
-                      navigator.clipboard.writeText(uid);
-                      window.open('https://everychat-Waseda.web.app', '_blank');
+                      try {
+                        navigator.clipboard.writeText(uid);
+                      } catch (e) {
+                        console.error(e);
+                      }
                     }
                   }}
                   className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold flex items-center gap-1 transition-all active:scale-95 shadow-md"
-                  title="ユーザーIDをコピーして everychat-Waseda.web.app を開く"
+                  title="ユーザーIDをコピーして everychat-waseda.web.app を開く"
                 >
                   <MessageSquare size={12} />
                   <span>everychatで共有</span>
                   <ExternalLink size={10} />
-                </button>
+                </a>
               </div>
               <div className="text-slate-500">Joined: {new Date(profile.createdAt).toLocaleDateString()}</div>
             </div>
