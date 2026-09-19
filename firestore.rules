@@ -68,7 +68,7 @@ service cloud.firestore {
     // 1. User Profiles Collection
     match /users/{userId} {
       allow get: if isSignedIn() && isValidId(userId);
-      allow list: if false; // Disallow bulk scraping of user profiles
+      allow list: if isSignedIn(); // Allow authenticated users to search/query player profiles for friend adding
 
       allow create: if isOwner(userId) &&
         isValidId(userId) &&
