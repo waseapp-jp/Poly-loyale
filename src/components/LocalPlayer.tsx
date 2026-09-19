@@ -137,8 +137,21 @@ export function LocalPlayer() {
   });
 
   const spectateTargetId = useGameStore((s) => s.spectateTargetId);
+  const setFps = useGameStore((s) => s.setFps);
+  const frameCountRef = React.useRef(0);
+  const lastFpsCalcRef = React.useRef(performance.now());
 
   useFrame((state, delta) => {
+    // Measure FPS
+    frameCountRef.current++;
+    const now = performance.now();
+    if (now - lastFpsCalcRef.current >= 1000) {
+      const calcFps = Math.round((frameCountRef.current * 1000) / (now - lastFpsCalcRef.current));
+      setFps(calcFps);
+      frameCountRef.current = 0;
+      lastFpsCalcRef.current = now;
+    }
+
     setThreeCameraForProjection(state.camera);
     const gameState = useGameStore.getState().gameState;
     const myPlayerFull = myId && gameState ? gameState.players[myId] : null;

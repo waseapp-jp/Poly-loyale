@@ -1615,6 +1615,12 @@ async function startServer() {
     // ==========================================
     // P2P SIGNALING & DIRECT FRIEND MATCH EVENTS
     // ==========================================
+    socket.on('ping_check', (timestamp: number, callback: (clientTimestamp: number, serverTimestamp: number) => void) => {
+      if (typeof callback === 'function') {
+        callback(timestamp, Date.now());
+      }
+    });
+
     socket.on('p2p_register_user', ({ userId }: { userId: string }) => {
       if (userId) {
         userSockets[userId] = socket.id;

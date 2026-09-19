@@ -114,6 +114,17 @@ interface StoreState {
   incomingP2PInvite: P2PInviteNotification | null;
   p2pNotice: string | null;
 
+  // Network & Lag Measurement fields
+  latencyMs: number;
+  jitterMs: number;
+  fps: number;
+  pingHistory: number[];
+  isMeasuringLag: boolean;
+
+  measurePing: () => Promise<number>;
+  runFullLagDiagnostic: () => Promise<{ avgPing: number; minPing: number; maxPing: number; jitter: number }>;
+  setFps: (fps: number) => void;
+
   connect: (
     mode: 'casual' | 'ranked' | 'password' | 'team' | 'bot' | 'p2p_duel',
     password?: string,
@@ -139,6 +150,15 @@ interface StoreState {
   clearP2PNotice: () => void;
 }
 
+function calculateJitter(history: number[]): number {
+  if (history.length < 2) return 0;
+  let diffSum = 0;
+  for (let i = 1; i < history.length; i++) {
+    diffSum += Math.abs(history[i] - history[i - 1]);
+  }
+  return Math.round(diffSum / (history.length - 1));
+}
+
 export const useGameStore = create<StoreState>((set, get) => ({
   socket: null,
   gameState: null,
@@ -155,6 +175,64 @@ export const useGameStore = create<StoreState>((set, get) => ({
   p2pPing: 0,
   incomingP2PInvite: null,
   p2pNotice: null,
+
+  latencyMs: 0,
+  jitterMs: 0,
+  fps: 60,
+  pingHistory: [],
+  isMeasuringLag: false,
+
+  setFps: (fps: number) => set({ fps }),
+
+  measurePing: async () => {
+    const { socket, p2pState, p2pPing, pingHistory } = get();
+    if (p2pState === 'connected' && p2pPing > 0) {
+      const newHistory = [...pingHistory.slice(-29), p2pPing];
+      const jitter = calculateJitter(newHistory);
+      set({ latencyMs: p2pPing, pingHistory: newHistory, jitterMs: jitter });
+      return p2pPing;
+    }
+
+    if (!socket || !socket.connected) {
+      return 0;
+    }
+
+    const start = performance.now();
+    return new Promise<number>((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve(0);
+      }, 3000);
+
+      socket.emit('ping_check', Date.now(), () => {
+        clearTimeout(timeout);
+        const rtt = Math.round(performance.now() - start);
+        const newHistory = [...get().pingHistory.slice(-29), rtt];
+        const jitter = calculateJitter(newHistory);
+        set({ latencyMs: rtt, pingHistory: newHistory, jitterMs: jitter });
+        resolve(rtt);
+      });
+    });
+  },
+
+  runFullLagDiagnostic: async () => {
+    set({ isMeasuringLag: true });
+    const samples: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      const p = await get().measurePing();
+      if (p > 0) samples.push(p);
+      await new Promise((r) => setTimeout(r, 180));
+    }
+    set({ isMeasuringLag: false });
+
+    if (samples.length === 0) {
+      return { avgPing: 0, minPing: 0, maxPing: 0, jitter: 0 };
+    }
+    const avgPing = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length);
+    const minPing = Math.min(...samples);
+    const maxPing = Math.max(...samples);
+    const jitter = calculateJitter(samples);
+    return { avgPing, minPing, maxPing, jitter };
+  },
   input: {
     x: 0,
     y: 1,

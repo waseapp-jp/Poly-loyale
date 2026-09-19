@@ -14,9 +14,10 @@ import { FirebaseAccount } from './components/FirebaseAccount';
 import { FriendsModal } from './components/FriendsModal';
 import { P2PInviteModal } from './components/P2PInviteModal';
 import { P2PStatusBadge } from './components/P2PStatusBadge';
+import { LagMonitorModal } from './components/LagMonitorModal';
 import { auth, updateUserStats, UserProfileData } from './firebase';
 import { CharacterClass } from './types';
-import { RotateCcw, LogOut, Trophy, Flame, Sparkles, Users, UserPlus, Zap } from 'lucide-react';
+import { RotateCcw, LogOut, Trophy, Flame, Sparkles, Users, UserPlus, Zap, Activity } from 'lucide-react';
 import { getRankTier, RANK_CONFIGS } from './utils/rankUtils';
 
 // Isolated Matchmaking Lobby UI - updates its own countdown without re-rendering App/Canvas
@@ -179,6 +180,7 @@ export default function App() {
 
   const [hasStarted, setHasStarted] = useState(false);
   const [isFriendsOpen, setIsFriendsOpen] = useState(false);
+  const [isLagModalOpen, setIsLagModalOpen] = useState(false);
   const [lobbyOnlineCount, setLobbyOnlineCount] = useState<number>(1);
   const [mode, setMode] = useState<'casual'|'ranked'|'password'|'team'|'bot'|'p2p_duel'>('bot');
   const [password, setPassword] = useState('');
@@ -394,6 +396,16 @@ export default function App() {
             <Users size={14} className="text-emerald-400" />
             <span>オンライン中: <strong className="text-white font-mono text-xs sm:text-sm font-black">{lobbyOnlineCount}</strong> 人</span>
           </div>
+
+          {/* Lag Measurement Trigger Button */}
+          <button
+            onClick={() => setIsLagModalOpen(true)}
+            className="bg-slate-800/90 border border-amber-500/40 hover:bg-slate-700/90 text-amber-300 text-xs sm:text-sm font-extrabold px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-full flex items-center gap-1.5 shadow-lg backdrop-blur-md hover:scale-105 transition-all cursor-pointer"
+            title="通信応答速度・ラグを測定"
+          >
+            <Activity size={15} className="text-amber-400" />
+            <span>📡 ラグ測定</span>
+          </button>
 
           {/* Friends & P2P 1v1 Modal Trigger Button */}
           <button
@@ -668,6 +680,12 @@ export default function App() {
           invite={incomingP2PInvite}
           selectedClass={charClass}
         />
+
+        {/* Lag & Network Diagnostic Modal */}
+        <LagMonitorModal
+          isOpen={isLagModalOpen}
+          onClose={() => setIsLagModalOpen(false)}
+        />
       </div>
     );
   }
@@ -712,7 +730,7 @@ export default function App() {
 
       {/* P2P Status Badge in HUD */}
       <div className="absolute top-4 left-4 z-40 pointer-events-auto">
-        <P2PStatusBadge />
+        <P2PStatusBadge onOpenLagModal={() => setIsLagModalOpen(true)} />
       </div>
 
       {/* P2P Realtime System Notice Toast */}
@@ -753,6 +771,12 @@ export default function App() {
       <P2PInviteModal
         invite={incomingP2PInvite}
         selectedClass={charClass}
+      />
+
+      {/* Lag & Network Diagnostic Modal */}
+      <LagMonitorModal
+        isOpen={isLagModalOpen}
+        onClose={() => setIsLagModalOpen(false)}
       />
     </div>
   );
