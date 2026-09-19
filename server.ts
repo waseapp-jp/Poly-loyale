@@ -1571,8 +1571,8 @@ async function startServer() {
       const player = room.players[socket.id];
       if (!player) return;
 
-      // Allow in-match respawn in 'bot' and 'team' mode
-      if (room.mode !== 'bot' && room.mode !== 'team') {
+      // Allow in-match respawn in 'bot' mode only
+      if (room.mode !== 'bot') {
         return;
       }
 
@@ -1591,9 +1591,6 @@ async function startServer() {
       player.isInvulnerable = false;
       player.hasShield = false;
       player.lastAbilityTime = 0;
-      if (room.mode === 'team' && player.team) {
-        player.color = player.team === 'red' ? '#ef4444' : '#3b82f6';
-      }
 
       broadcastRoomState(io, room);
       socket.emit('respawned', { x: player.x, y: player.y, z: player.z });
@@ -1986,30 +1983,6 @@ async function startServer() {
         }
 
         // --- HIGH-PERFORMANCE TACTICAL BOT AI BEHAVIOR TICK ---
-        if (room.mode === 'team') {
-          // Check for fallen bots in team mode that can respawn after 6 seconds
-          Object.values(room.players).forEach(bot => {
-            if (!bot.isBot || !bot.isDead) return;
-            const botExt = bot as any;
-            if (!botExt.deathTime) botExt.deathTime = now;
-            if (now - botExt.deathTime > 6000) {
-              const safePos = findSafeSpawnPosition(room.obstacles, MAP_SIZE, 3.5, roomId);
-              const botStats = CLASS_STATS[bot.characterClass];
-              bot.isDead = false;
-              bot.health = botStats.maxHp;
-              bot.maxHealth = botStats.maxHp;
-              bot.x = safePos.x;
-              bot.y = 1;
-              bot.z = safePos.z;
-              bot.heals = 1;
-              bot.isHealing = false;
-              bot.isFlying = false;
-              bot.isInvulnerable = true;
-              botExt.lastDamagedTime = now + 2500;
-              botExt.deathTime = 0;
-            }
-          });
-        }
 
         const humanPlayers = alivePlayers.filter(p => !p.isBot);
         let botIndex = 0;

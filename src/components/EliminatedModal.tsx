@@ -31,7 +31,7 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
     return null;
   }
 
-  const canRespawn = gameState.mode === 'bot' || gameState.mode === 'team';
+  const canRespawn = gameState.mode === 'bot';
   const otherAlive = Object.values(gameState.players).filter((p) => !p.isDead && p.id !== myId);
   const canSpectate = otherAlive.length > 0;
 
@@ -68,7 +68,7 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
         {!canRespawn && (
           <div className="mb-5 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3.5 py-2 rounded-xl font-medium flex items-center gap-2">
             <span>🛡️</span>
-            <span>バトロワ仕様: カジュアル/ランクモードはリスポーンできません</span>
+            <span>ワンライフマッチ: リスポーンできません（観戦可能）</span>
           </div>
         )}
 

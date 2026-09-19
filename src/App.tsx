@@ -456,7 +456,7 @@ export default function App() {
         <div className="text-[11px] sm:text-xs text-slate-400 font-medium mb-3 sm:mb-4 min-h-4 flex items-center justify-center">
           {mode === 'bot' && `🤖 待ち時間なし！${botCount}体の自律型AI Botと大乱闘バトルロイヤル`}
           {mode === 'casual' && '⚔️ オンラインの他プレイヤーと通常マッチング'}
-          {mode === 'team' && '🛡️ 赤チーム vs 青チームの陣営対抗デスマッチ'}
+          {mode === 'team' && '🛡️ 赤チーム vs 青チームの陣営対抗戦（1ライフ制）'}
           {mode === 'ranked' && '🏆 勝敗でレートが増減する本格ランクバトル'}
           {mode === 'password' && '🔒 合言葉を設定してフレンド同士でプライベート対戦'}
         </div>
