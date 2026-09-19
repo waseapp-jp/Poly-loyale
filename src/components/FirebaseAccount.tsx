@@ -12,7 +12,7 @@ import {
   UserProfileData,
   LeaderboardEntryData,
 } from '../firebase';
-import { Trophy, LogIn, LogOut, Shield, Award, UserCheck, X, Activity, BarChart2, History, Sparkles, RotateCcw, Settings, Mail } from 'lucide-react';
+import { Trophy, LogIn, LogOut, Shield, Award, UserCheck, X, Activity, BarChart2, History, Sparkles, RotateCcw, Settings, Mail, MessageSquare, ExternalLink, Share2 } from 'lucide-react';
 import { fetchUserHistory, MatchHistoryData } from '../firebase';
 import { MatchHistory } from './MatchHistory';
 import { getRankTier, RANK_CONFIGS, ALL_RANKS, RankTier } from '../utils/rankUtils';
@@ -595,8 +595,29 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
               </div>
             )}
             
-            <div className="mt-4 pt-4 border-t border-slate-800 flex justify-end">
-               <div className="text-xs text-slate-500">Joined: {new Date(profile.createdAt).toLocaleDateString()}</div>
+            <div className="mt-4 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-slate-400 bg-slate-900 px-2 py-1 rounded border border-slate-700">
+                  ID: {profile.userId || user.uid}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const uid = profile.userId || user.uid;
+                    if (uid) {
+                      navigator.clipboard.writeText(uid);
+                      window.open('https://everychat-Waseda.web.app', '_blank');
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold flex items-center gap-1 transition-all active:scale-95 shadow-md"
+                  title="ユーザーIDをコピーして everychat-Waseda.web.app を開く"
+                >
+                  <MessageSquare size={12} />
+                  <span>everychatで共有</span>
+                  <ExternalLink size={10} />
+                </button>
+              </div>
+              <div className="text-slate-500">Joined: {new Date(profile.createdAt).toLocaleDateString()}</div>
             </div>
           </div>
         </div>

@@ -11,7 +11,10 @@ import {
   Clock,
   Sparkles,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  MessageSquare,
+  ExternalLink,
+  Share2
 } from 'lucide-react';
 import {
   auth,
@@ -164,6 +167,19 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     }
   };
 
+  const shareOnEverychat = () => {
+    if (currentUserProfile?.userId) {
+      navigator.clipboard.writeText(currentUserProfile.userId);
+      setCopiedUid(true);
+      setActionMessage('📋 ユーザーIDをコピーし、everychat (everychat-Waseda.web.app) を開きました！');
+      setTimeout(() => {
+        setCopiedUid(false);
+        setActionMessage(null);
+      }, 5000);
+      window.open('https://everychat-Waseda.web.app', '_blank');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-fadeIn">
       <div className="relative w-full max-w-xl bg-slate-900/95 border border-amber-500/30 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -184,12 +200,26 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
               <p className="text-xs text-slate-400">フレンドの管理とP2P 1v1対戦ルームへの即時招待</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2">
+            {currentUserProfile && (
+              <button
+                onClick={shareOnEverychat}
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white border border-indigo-400/40 rounded-xl text-xs font-bold shadow-md transition-all active:scale-95"
+                title="IDをコピーして everychat-Waseda.web.app を開く"
+              >
+                <Share2 className="w-3.5 h-3.5 text-blue-200" />
+                <span className="hidden sm:inline">everychatでID共有</span>
+                <span className="sm:hidden">everychat</span>
+                <ExternalLink className="w-3 h-3 text-indigo-200" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Selection */}
@@ -315,24 +345,48 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
             /* TAB 2: ADD FRIEND & OWN CODE */
             <div className="space-y-6">
               {/* Own User ID Display Card */}
-              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
+              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <span className="text-xs font-bold text-amber-400 flex items-center space-x-1">
                     <UserCheck className="w-4 h-4" />
                     <span>あなたのフレンドコード / User ID</span>
                   </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={copyOwnUid}
+                      className="flex items-center space-x-1 px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-xs font-bold text-amber-300 transition-all active:scale-95"
+                    >
+                      {copiedUid ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedUid ? 'コピー完了!' : 'IDをコピー'}</span>
+                    </button>
+
+                    <button
+                      onClick={shareOnEverychat}
+                      className="flex items-center space-x-1 px-2.5 py-1 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white border border-indigo-400/50 rounded-lg text-xs font-extrabold shadow-md hover:shadow-indigo-500/20 transition-all active:scale-95"
+                      title="IDをコピーして everychat-Waseda.web.app を開く"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-blue-200" />
+                      <span>everychatで共有</span>
+                      <ExternalLink className="w-3 h-3 text-indigo-200" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="font-mono text-xs text-slate-200 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800 select-all break-all flex items-center justify-between">
+                  <span>{currentUserProfile.userId}</span>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-400 gap-2 flex-wrap pt-1 border-t border-amber-500/20">
+                  <span>友達にこのIDを共有すると、直接フレンド申請を送ってもらえます。</span>
                   <button
-                    onClick={copyOwnUid}
-                    className="flex items-center space-x-1 px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-xs font-bold text-amber-300 transition-all"
+                    type="button"
+                    onClick={shareOnEverychat}
+                    className="text-xs text-indigo-300 hover:text-indigo-200 font-bold underline flex items-center gap-1 cursor-pointer"
                   >
-                    {copiedUid ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span>{copiedUid ? 'コピー完了!' : 'IDをコピー'}</span>
+                    <span>💬 everychatでコミュニティへ共有</span>
+                    <ExternalLink className="w-3 h-3" />
                   </button>
                 </div>
-                <div className="font-mono text-xs text-slate-200 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800 select-all break-all">
-                  {currentUserProfile.userId}
-                </div>
-                <p className="text-[11px] text-slate-400">友達にこのIDを共有すると、直接フレンド申請を送ってもらえます。</p>
               </div>
 
               {/* Search Form */}
