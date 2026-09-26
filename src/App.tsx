@@ -230,11 +230,12 @@ export default function App() {
   // Synchronize cloud profile into active profile state
   useEffect(() => {
     if (cloudProfile) {
+      const activeVal = cloudProfile.rankPoints ?? cloudProfile.rating ?? 0;
       setProfile((prev: any) => ({
         ...prev,
         wins: cloudProfile.totalWins || 0,
-        rankPoints: cloudProfile.rankPoints || 0,
-        rating: cloudProfile.rating && cloudProfile.rating >= 2000 ? cloudProfile.rating : null,
+        rankPoints: activeVal,
+        rating: activeVal,
       }));
     }
   }, [cloudProfile]);
@@ -248,32 +249,21 @@ export default function App() {
       const myScore = myPlayerScore || 0;
       
       let ratingChange = 0;
-      let currentRankPoints = cloudProfile?.rankPoints ?? profile.rankPoints ?? 0;
-      let currentRating: number | null = (cloudProfile?.rating && cloudProfile.rating >= 2000)
-        ? cloudProfile.rating
-        : (profile.rating && profile.rating >= 2000 ? profile.rating : null);
+      let currentRankPoints = cloudProfile?.rankPoints ?? cloudProfile?.rating ?? profile.rankPoints ?? profile.rating ?? 0;
 
       // Calculate Rank Points (RP) & Rating progression ONLY for Ranked mode ('ranked')
       if (gameMode === 'ranked') {
         const killPoints = Math.min(15, myScore * 3);
         const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : -5);
         ratingChange = killPoints + placementPoints;
-
-        if (currentRating !== null) {
-          currentRating = Math.max(2000.0, currentRating + (ratingChange * 0.2));
-        } else {
-          currentRankPoints = Math.max(0, currentRankPoints + ratingChange);
-          if (currentRankPoints >= 2000) {
-            currentRating = 2000.0 + (currentRankPoints - 2000) * 0.1;
-          }
-        }
+        currentRankPoints = Math.max(0, currentRankPoints + ratingChange);
       }
 
       const updated = {
         wins: cloudProfile?.totalWins ?? profile.wins ?? 0,
         streak: 0,
         rankPoints: currentRankPoints,
-        rating: currentRating,
+        rating: currentRankPoints,
       };
       setProfile(updated);
       localStorage.setItem('poly_profile', JSON.stringify(updated));
@@ -287,21 +277,13 @@ export default function App() {
           1,
           charClass,
           ratingChange,
-          currentRating !== null ? currentRating : currentRankPoints,
+          currentRankPoints,
           activeMode,
           myScore,
           finalPlacement
         ).then((updatedDoc) => {
           if (updatedDoc) {
             setCloudProfile(updatedDoc);
-          } else {
-            setCloudProfile(prev => prev ? {
-              ...prev,
-              totalKills: (prev.totalKills || 0) + myScore,
-              totalMatches: (prev.totalMatches || 0) + 1,
-              rankPoints: currentRankPoints,
-              rating: currentRating ?? undefined,
-            } : null);
           }
         }).catch((err) => console.error('Error syncing match on lobby return:', err));
       }
@@ -327,15 +309,11 @@ export default function App() {
       const isWin = winner === myId || (myPlayerTeam && winner === myPlayerTeam);
       const myScore = myPlayerScore || 0;
 
-      const currentRankPoints = cloudProfile?.rankPoints ?? profile.rankPoints ?? 0;
-      const currentRating: number | null = (cloudProfile?.rating && cloudProfile.rating >= 2000)
-        ? cloudProfile.rating
-        : (profile.rating && profile.rating >= 2000 ? profile.rating : null);
+      let currentRankPoints = cloudProfile?.rankPoints ?? cloudProfile?.rating ?? profile.rankPoints ?? profile.rating ?? 0;
 
       let newWins = (cloudProfile?.totalWins ?? profile.wins ?? 0) + (isWin ? 1 : 0);
       let newStreak = isWin ? ((profile.streak || 0) + 1) : 0;
       let newRankPoints = currentRankPoints;
-      let newRating: number | null = currentRating;
       let ratingChange = 0;
 
       // Rate & RP only changes in Ranked mode!
@@ -343,18 +321,7 @@ export default function App() {
         if (isWin) {
           const killBonus = Math.min(15, myScore * 3);
           const streakBonus = Math.min(10, newStreak * 2);
-          const pointsEarned = 20 + killBonus + streakBonus;
-          
-          if (newRating === null) {
-            ratingChange = pointsEarned;
-            newRankPoints += pointsEarned;
-            if (newRankPoints >= 2000) {
-              newRating = 2000.0 + (newStreak * 5);
-            }
-          } else {
-            ratingChange = 5.0 + Math.min(5, myScore) + Math.min(5, newStreak * 1.0);
-            newRating += ratingChange;
-          }
+          ratingChange = 20 + killBonus + streakBonus;
         } else {
           const killPoints = Math.min(15, myScore * 3);
           const otherAliveCount = Object.values(useGameStore.getState().gameState?.players || {}).filter(p => !p.isDead && p.id !== myId).length;
@@ -362,23 +329,15 @@ export default function App() {
           const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : -5);
           
           ratingChange = killPoints + placementPoints;
-
-          if (newRating !== null) {
-            newRating = Math.max(2000.0, newRating + (ratingChange * 0.2));
-          } else {
-            newRankPoints = Math.max(0, newRankPoints + ratingChange);
-            if (newRankPoints >= 2000) {
-              newRating = 2000.0 + (newRankPoints - 2000) * 0.1;
-            }
-          }
         }
+        newRankPoints = Math.max(0, currentRankPoints + ratingChange);
       }
 
       const newProfile = {
         wins: newWins,
         streak: newStreak,
         rankPoints: newRankPoints,
-        rating: newRating,
+        rating: newRankPoints,
       };
 
       setProfile(newProfile);
@@ -387,7 +346,6 @@ export default function App() {
       // Sync stats to Firebase Firestore if logged in
       if (auth.currentUser) {
         const deaths = isWin ? 0 : 1;
-        const finalRating = newRating !== null ? newRating : newRankPoints;
         const otherAliveCount = Object.values(useGameStore.getState().gameState?.players || {}).filter(p => !p.isDead && p.id !== myId).length;
         const finalPlacement = isWin ? 1 : Math.max(2, otherAliveCount + 1);
         const activeMode = gameMode || mode;
@@ -399,7 +357,7 @@ export default function App() {
           deaths,
           charClass,
           ratingChange,
-          finalRating,
+          newRankPoints,
           activeMode,
           myScore,
           finalPlacement
@@ -413,7 +371,7 @@ export default function App() {
               totalKills: prev.totalKills + myScore,
               totalMatches: prev.totalMatches + 1,
               rankPoints: newRankPoints,
-              rating: newRating ?? undefined,
+              rating: newRankPoints,
             } : null);
           }
         }).catch((err) => console.error('Error syncing match to Firebase:', err));
