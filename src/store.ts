@@ -55,7 +55,6 @@ export interface LiveInput {
   isHealing: boolean;
   useAbility: boolean;
   useAbility2?: boolean;
-  useSubWeapon?: boolean;
   isRolling: boolean;
   isZoomed: boolean;
   jumpFromBus?: boolean;
@@ -75,7 +74,6 @@ export const liveInput: LiveInput = {
   isShooting: false,
   isHealing: false,
   useAbility: false,
-  useSubWeapon: false,
   isRolling: false,
   isZoomed: false,
   jumpFromBus: false,
@@ -109,13 +107,11 @@ interface StoreState {
   localLastAbilityTime: number;
   localLastAbility2Time: number;
   localLastHealTime: number;
-  localLastSubWeaponTime: number;
-
-  // Stun flashbang whiteout overlay state
-  isBlinded: boolean;
-  blindIntensity: number;
 
   // P2P & Social fields
+  hasStarted: boolean;
+  setHasStarted: (val: boolean) => void;
+  handlePeerDirectInput: (peerId: string, peerInput: any) => void;
   p2pState: P2PState;
   p2pPing: number;
   incomingP2PInvite: P2PInviteNotification | null;
@@ -148,7 +144,6 @@ interface StoreState {
     p2pRoomId?: string
   ) => void;
   setInput: (input: Partial<ClientInput>) => void;
-  triggerSubWeapon: () => void;
   sendInput: () => void;
   respawn: () => void;
   leaveGame: () => void;
@@ -176,6 +171,8 @@ export const useGameStore = create<StoreState>((set, get) => ({
   socket: null,
   gameState: null,
   myId: null,
+  hasStarted: false,
+  setHasStarted: (hasStarted: boolean) => set({ hasStarted }),
   showHitMarker: false,
   showDamageFlash: false,
   damageIndicators: [],
@@ -188,6 +185,30 @@ export const useGameStore = create<StoreState>((set, get) => ({
   p2pPing: 0,
   incomingP2PInvite: null,
   p2pNotice: null,
+
+  handlePeerDirectInput: (peerId: string, peerInput: any) => {
+    set((prev) => {
+      if (!prev.gameState || !prev.gameState.players[peerId]) return {};
+      const curr = prev.gameState.players[peerId];
+      return {
+        gameState: {
+          ...prev.gameState,
+          players: {
+            ...prev.gameState.players,
+            [peerId]: {
+              ...curr,
+              x: typeof peerInput.x === 'number' ? peerInput.x : curr.x,
+              y: typeof peerInput.y === 'number' ? peerInput.y : curr.y,
+              z: typeof peerInput.z === 'number' ? peerInput.z : curr.z,
+              ry: typeof peerInput.ry === 'number' ? peerInput.ry : curr.ry,
+              isRolling: peerInput.isRolling !== undefined ? peerInput.isRolling : curr.isRolling,
+              isShooting: peerInput.isShooting !== undefined ? peerInput.isShooting : (curr as any).isShooting,
+            }
+          }
+        }
+      };
+    });
+  },
 
   latencyMs: 0,
   jitterMs: 0,
@@ -283,6 +304,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
     isZoomed: false,
   },
   connect: (mode, password, characterClass = 'melee', botCount, team, teamMatchType = 'pvp', playerName, p2pRoomId) => {
+    set({ hasStarted: true });
     if (get().socket) {
       get().socket?.disconnect();
     }
@@ -326,25 +348,50 @@ export const useGameStore = create<StoreState>((set, get) => ({
     });
 
     socket.on('p2p_accepted', ({ p2pRoomId, acceptorName }: { p2pRoomId: string; acceptorName: string }) => {
-      set({ p2pNotice: `⚔️ ${acceptorName || 'フレンド'} が1v1 P2P対戦に参加しました！` });
+      set({ p2pNotice: `⚔️ ${acceptorName || 'フレンド'} が1v1 P2P対戦に参加しました！`, hasStarted: true });
       // Host connects to the p2p_duel room
       get().connect('p2p_duel', undefined, characterClass, 0, undefined, 'pvp', resolvedPlayerName, p2pRoomId);
+    });
 
-      // Start WebRTC connection as Host
-      p2pManager.initAsHost(
-        (signal) => {
-          socket.emit('p2p_signal', { roomId: p2pRoomId, signal });
-        },
-        (p2pData) => {
-          // Handle direct WebRTC incoming inputs/messages
-          if (p2pData && p2pData.type === 'input') {
-            socket.emit('input', p2pData.input);
+    socket.on('p2p_peers_ready', ({ hostId, guestId, roomId }: { hostId: string; guestId: string; roomId: string }) => {
+      const myId = get().myId || socket.id;
+      set({ p2pNotice: '⚡ 対戦相手と接続中... 超低遅延 P2P WebRTCリンク確立中', hasStarted: true });
+
+      if (myId === hostId) {
+        p2pManager.initAsHost(
+          (signal) => {
+            socket.emit('p2p_signal', { targetSocketId: guestId, roomId, signal });
+          },
+          (p2pData) => {
+            if (p2pData?.type === 'peer_input' && p2pData.input) {
+              get().handlePeerDirectInput(guestId, p2pData.input);
+            }
+          },
+          (p2pState, pingMs) => {
+            set({ p2pState, p2pPing: pingMs });
+            if (p2pState === 'connected') {
+              set({ p2pNotice: `⚡ P2P Direct接続完了！超低遅延: ${pingMs}ms` });
+            }
           }
-        },
-        (p2pState, pingMs) => {
-          set({ p2pState, p2pPing: pingMs });
-        }
-      );
+        );
+      } else {
+        p2pManager.initAsGuest(
+          (signal) => {
+            socket.emit('p2p_signal', { targetSocketId: hostId, roomId, signal });
+          },
+          (p2pData) => {
+            if (p2pData?.type === 'peer_input' && p2pData.input) {
+              get().handlePeerDirectInput(hostId, p2pData.input);
+            }
+          },
+          (p2pState, pingMs) => {
+            set({ p2pState, p2pPing: pingMs });
+            if (p2pState === 'connected') {
+              set({ p2pNotice: `⚡ P2P Direct接続完了！超低遅延: ${pingMs}ms` });
+            }
+          }
+        );
+      }
     });
 
     socket.on('p2p_declined', ({ declinerName }: { declinerName: string }) => {
@@ -359,13 +406,6 @@ export const useGameStore = create<StoreState>((set, get) => ({
       if (!success && reason) {
         set({ p2pNotice: `⚠️ 招待の送信に失敗: ${reason}` });
       }
-    });
-
-    socket.on('stunBlinded', ({ intensity, durationMs }: { intensity: number; durationMs: number }) => {
-      set({ isBlinded: true, blindIntensity: intensity || 1.0 });
-      setTimeout(() => {
-        set({ isBlinded: false, blindIntensity: 0 });
-      }, durationMs || 3500);
     });
 
     socket.on('init', ({ id, state }: { id: string, state: GameState }) => {
@@ -447,7 +487,6 @@ export const useGameStore = create<StoreState>((set, get) => ({
               inBus: !!inc.inBus,
               isSkydiving: !!inc.isSkydiving,
               isGliding: !!inc.isGliding,
-              isShadowStealth: !!inc.isShadowStealth,
             };
           }
         }
@@ -460,6 +499,12 @@ export const useGameStore = create<StoreState>((set, get) => ({
               delete mergedPlayers[pid];
             }
           }
+        } else if (state.players) {
+          for (const pid in prev.gameState.players) {
+            if (!(pid in state.players)) {
+              delete mergedPlayers[pid];
+            }
+          }
         }
 
         return {
@@ -469,7 +514,6 @@ export const useGameStore = create<StoreState>((set, get) => ({
             players: mergedPlayers,
             items: state.items !== undefined ? state.items : prev.gameState.items,
             bombs: state.bombs !== undefined ? state.bombs : prev.gameState.bombs,
-            smokeClouds: state.smokeClouds !== undefined ? state.smokeClouds : prev.gameState.smokeClouds,
             obstacles: state.obstacles || prev.gameState.obstacles,
           }
         };
@@ -519,6 +563,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
     }
   },
   leaveGame: () => {
+    p2pManager.cleanup();
     const { socket } = get();
     if (socket) {
       socket.emit('leaveRoom');
@@ -535,6 +580,9 @@ export const useGameStore = create<StoreState>((set, get) => ({
       socket: null,
       gameState: null,
       myId: null,
+      hasStarted: false,
+      p2pState: 'idle',
+      p2pPing: 0,
       spectateTargetId: null,
       damageIndicators: [],
       showDamageFlash: false,
@@ -560,11 +608,6 @@ export const useGameStore = create<StoreState>((set, get) => ({
       set({ spectateTargetId: alivePlayers[nextIndex].id });
     }
   },
-  triggerSubWeapon: () => {
-    liveInput.useSubWeapon = true;
-    set({ localLastSubWeaponTime: Date.now() });
-    get().sendInput();
-  },
   setInput: (newInput) => {
     Object.assign(liveInput, newInput);
     
@@ -573,11 +616,10 @@ export const useGameStore = create<StoreState>((set, get) => ({
     if (newInput.isRolling) timeUpdates.localLastRollTime = now;
     if (newInput.useAbility) timeUpdates.localLastAbilityTime = now;
     if (newInput.useAbility2) timeUpdates.localLastAbility2Time = now;
-    if (newInput.useSubWeapon) timeUpdates.localLastSubWeaponTime = now;
     if (newInput.isHealing) timeUpdates.localLastHealTime = now;
 
     // Only update zustand if shooting/ability/healing/rolling/zoomed changes to avoid 60fps re-render thrashing
-    if (newInput.isShooting !== undefined || newInput.isHealing !== undefined || newInput.useAbility !== undefined || newInput.useAbility2 !== undefined || newInput.useSubWeapon !== undefined || newInput.isRolling !== undefined || newInput.isZoomed !== undefined || Object.keys(timeUpdates).length > 0) {
+    if (newInput.isShooting !== undefined || newInput.isHealing !== undefined || newInput.useAbility !== undefined || newInput.useAbility2 !== undefined || newInput.isRolling !== undefined || newInput.isZoomed !== undefined || Object.keys(timeUpdates).length > 0) {
       set((state) => ({ 
         input: { ...state.input, ...newInput },
         ...timeUpdates
@@ -593,10 +635,10 @@ export const useGameStore = create<StoreState>((set, get) => ({
     const roundedZ = Math.round(liveInput.z * 10) / 10;
     const roundedRy = Math.round(liveInput.ry * 100) / 100;
     const roundedPitch = Math.round(liveInput.pitch * 100) / 100;
-    const isAction = !!(liveInput.isShooting || liveInput.isHealing || liveInput.useAbility || liveInput.useAbility2 || liveInput.useSubWeapon || liveInput.isRolling || liveInput.jumpFromBus || liveInput.toggleGlider);
+    const isAction = !!(liveInput.isShooting || liveInput.isHealing || liveInput.useAbility || liveInput.useAbility2 || liveInput.isRolling || liveInput.jumpFromBus || liveInput.toggleGlider);
 
     const now = performance.now();
-    const isOneShotAction = !!(liveInput.useAbility || liveInput.useAbility2 || liveInput.useSubWeapon || liveInput.jumpFromBus || liveInput.toggleGlider || liveInput.isShooting);
+    const isOneShotAction = !!(liveInput.useAbility || liveInput.useAbility2 || liveInput.jumpFromBus || liveInput.toggleGlider || liveInput.isShooting);
     if (now - lastSentTime < 33 && !isOneShotAction) return;
     // Adaptive send: only send if action occurred, moved/rotated, or 350ms heartbeat elapsed
     if (!isAction && lastSentInput && (now - lastSentTime < 350)) {
@@ -635,15 +677,28 @@ export const useGameStore = create<StoreState>((set, get) => ({
       isHealing: liveInput.isHealing,
       useAbility: liveInput.useAbility,
       useAbility2: liveInput.useAbility2,
-      useSubWeapon: liveInput.useSubWeapon,
       isRolling: liveInput.isRolling,
       jumpFromBus: liveInput.jumpFromBus,
       toggleGlider: liveInput.toggleGlider,
     });
-    // One-shot triggers must reset after transmission
-    if (liveInput.useSubWeapon) {
-      liveInput.useSubWeapon = false;
+
+    // If WebRTC DataChannel is connected, send direct P2P packet for ultra-low latency peer synchronization
+    if (p2pManager.getState() === 'connected') {
+      p2pManager.send({
+        type: 'peer_input',
+        input: {
+          x: roundedX,
+          y: roundedY,
+          z: roundedZ,
+          ry: roundedRy,
+          pitch: roundedPitch,
+          isShooting: liveInput.isShooting,
+          isRolling: liveInput.isRolling,
+        },
+      });
     }
+
+    // One-shot triggers must reset after transmission
     if (liveInput.toggleGlider) {
       liveInput.toggleGlider = false;
     }
@@ -661,7 +716,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
   },
 
   sendP2PInvite: (targetUid: string, inviterName: string, inviterUid: string) => {
-    const p2pRoomId = `p2p_1v1_${inviterUid.slice(0, 5)}_${Date.now().toString(36)}`;
+    const p2pRoomId = `P2P-${inviterUid.slice(0, 4).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const { socket } = get();
     if (socket && socket.connected) {
       socket.emit('p2p_invite', {
@@ -673,7 +728,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
       set({ p2pNotice: '⚡ P2P対戦招待を送信しました...' });
     } else {
       // Auto-connect socket if offline
-      get().connect('casual', undefined, 'melee', 0, undefined, 'pvp', inviterName);
+      get().connect('p2p_duel', undefined, 'melee', 0, undefined, 'pvp', inviterName, p2pRoomId);
       setTimeout(() => {
         get().socket?.emit('p2p_invite', { targetUid, inviterName, inviterUid, p2pRoomId });
         set({ p2pNotice: '⚡ P2P対戦招待を送信しました...' });
@@ -697,25 +752,10 @@ export const useGameStore = create<StoreState>((set, get) => ({
       });
     }
 
-    set({ incomingP2PInvite: null });
+    set({ incomingP2PInvite: null, hasStarted: true });
 
-    // Join room as Guest
+    // Join room as Guest - p2p_peers_ready will negotiate WebRTC automatically
     get().connect('p2p_duel', undefined, characterClass, 0, undefined, 'pvp', myName, invite.p2pRoomId);
-
-    // Initialize WebRTC as Guest
-    p2pManager.initAsGuest(
-      (signal) => {
-        get().socket?.emit('p2p_signal', { roomId: invite.p2pRoomId, targetUid: invite.inviterUid, signal });
-      },
-      (p2pData) => {
-        if (p2pData && p2pData.type === 'stateUpdate') {
-          // Direct state update via P2P
-        }
-      },
-      (p2pState, pingMs) => {
-        set({ p2pState, p2pPing: pingMs });
-      }
-    );
   },
 
   declineP2PInvite: (invite: P2PInviteNotification, declinerName: string) => {

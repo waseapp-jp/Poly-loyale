@@ -105,7 +105,6 @@ export interface UserProfileData {
 export interface LeaderboardEntryData {
   userId: string;
   displayName: string;
-  photoURL?: string;
   totalWins: number;
   totalKills: number;
   rating?: number;
@@ -135,26 +134,13 @@ export async function loadOrCreateUserProfile(user: User): Promise<UserProfileDa
 
     if (snap.exists()) {
       profile = snap.data() as UserProfileData;
-      // Inherit rank points from local storage if higher
-      try {
-        const local = JSON.parse(localStorage.getItem('poly_profile') || '{}');
-        const localPoints = local.rankPoints ?? local.rating ?? 0;
-        const cloudPoints = profile.rankPoints ?? profile.rating ?? 0;
-        if (localPoints > cloudPoints) {
-          profile.rankPoints = localPoints;
-          profile.rating = localPoints;
-          await setDoc(docRef, { rankPoints: localPoints, rating: localPoints }, { merge: true });
-        }
-      } catch {
-        // ignore parse error
+      // Fix legacy bug where default rating was erroneously initialized as 2000 for new users
+      if (profile.rating === 2000 && (!profile.rankPoints || profile.rankPoints < 2000)) {
+        profile.rating = undefined;
+        profile.rankPoints = profile.rankPoints || 0;
+        await setDoc(docRef, { rating: null, rankPoints: profile.rankPoints }, { merge: true });
       }
     } else {
-      let initialPoints = 0;
-      try {
-        const local = JSON.parse(localStorage.getItem('poly_profile') || '{}');
-        initialPoints = local.rankPoints ?? local.rating ?? 0;
-      } catch {}
-
       profile = {
         userId: user.uid,
         displayName: user.displayName || `Player_${user.uid.slice(0, 5)}`,
@@ -164,9 +150,9 @@ export async function loadOrCreateUserProfile(user: User): Promise<UserProfileDa
         totalKills: 0,
         totalDeaths: 0,
         totalMatches: 0,
-        rating: initialPoints,
-        rankPoints: initialPoints,
-        favoriteClass: 'melee',
+        rating: undefined,
+        rankPoints: 0,
+        favoriteClass: 'assault',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -176,18 +162,14 @@ export async function loadOrCreateUserProfile(user: User): Promise<UserProfileDa
     // Always ensure user is indexed in public leaderboard collection
     try {
       const lbRef = doc(db, 'leaderboard', user.uid);
-      const lbData: Record<string, any> = {
+      await setDoc(lbRef, {
         userId: user.uid,
-        displayName: profile.displayName || `Player_${user.uid.slice(0, 5)}`,
+        displayName: profile.displayName,
         totalWins: profile.totalWins || 0,
         totalKills: profile.totalKills || 0,
         rating: profile.rating ?? profile.rankPoints ?? 0,
-        updatedAt: profile.updatedAt || new Date().toISOString(),
-      };
-      if (profile.photoURL) {
-        lbData.photoURL = profile.photoURL;
-      }
-      await setDoc(lbRef, lbData, { merge: true });
+        updatedAt: profile.updatedAt,
+      }, { merge: true });
     } catch (e) {
       console.warn('Leaderboard sync note:', e);
     }
@@ -209,61 +191,54 @@ export async function updateUserStats(
   mode: string = 'casual',
   score: number = 0,
   placement?: number
-): Promise<UserProfileData | null> {
+): Promise<void> {
   const userPath = `users/${userId}`;
   try {
     const docRef = doc(db, 'users', userId);
     const snap = await getDoc(docRef);
-    if (!snap.exists()) return null;
+    if (!snap.exists()) return;
 
     const current = snap.data() as UserProfileData;
     const isRanked = mode === 'ranked';
 
-    let updatedRankPoints = current.rankPoints ?? current.rating ?? 0;
+    let updatedRankPoints = current.rankPoints || 0;
+    let updatedRating = current.rating && current.rating >= 2000 ? current.rating : undefined;
 
     if (isRanked) {
-      updatedRankPoints = Math.max(0, finalRatingOrPoints);
+      if (finalRatingOrPoints >= 2000) {
+        updatedRating = finalRatingOrPoints;
+        updatedRankPoints = Math.max(updatedRankPoints, 2000);
+      } else {
+        updatedRankPoints = Math.max(0, finalRatingOrPoints);
+        updatedRating = undefined;
+      }
     }
-    const updatedRating = updatedRankPoints;
 
     const updated: UserProfileData = {
       ...current,
-      userId,
-      displayName: current.displayName || `Player_${userId.slice(0, 5)}`,
-      totalWins: (current.totalWins || 0) + (won ? 1 : 0),
-      totalKills: (current.totalKills || 0) + kills,
+      totalWins: current.totalWins + (won ? 1 : 0),
+      totalKills: current.totalKills + kills,
       totalDeaths: (current.totalDeaths || 0) + deaths,
-      totalMatches: (current.totalMatches || 0) + 1,
+      totalMatches: current.totalMatches + 1,
       rankPoints: updatedRankPoints,
       rating: updatedRating,
-      favoriteClass: favClass || current.favoriteClass || 'melee',
-      createdAt: current.createdAt || new Date().toISOString(),
+      favoriteClass: favClass,
       updatedAt: new Date().toISOString(),
     };
-
-    if (current.photoURL) {
-      updated.photoURL = current.photoURL;
-    }
-    if (current.email) {
-      updated.email = current.email;
-    }
 
     await setDoc(docRef, updated);
 
     // Also update public leaderboard
     const lbRef = doc(db, 'leaderboard', userId);
-    const lbData: Record<string, any> = {
+    const lbData: LeaderboardEntryData = {
       userId,
       displayName: updated.displayName,
       totalWins: updated.totalWins,
       totalKills: updated.totalKills,
-      rating: updatedRating,
+      rating: updatedRating ?? updatedRankPoints,
       updatedAt: updated.updatedAt,
     };
-    if (updated.photoURL) {
-      lbData.photoURL = updated.photoURL;
-    }
-    await setDoc(lbRef, lbData, { merge: true });
+    await setDoc(lbRef, lbData);
     
     // Add match history with placement, score, mode, and rating
     const historyId = Math.random().toString(36).substring(2, 15);
@@ -278,44 +253,27 @@ export async function updateUserStats(
       score: actualScore,
       kills,
       ratingChange,
-      newRating: updatedRating,
+      newRating: updatedRating ?? updatedRankPoints,
       createdAt: updated.updatedAt,
     };
     await setDoc(historyRef, historyData);
-    return updated;
-  } catch (err) {
-    console.error('Error updating user stats in Firestore:', err);
-    return null;
-  }
-}
-
-export async function updateUserPhotoURL(userId: string, photoURL: string, displayName?: string): Promise<void> {
-  const userPath = `users/${userId}`;
-  try {
-    const docRef = doc(db, 'users', userId);
-    const updateData: any = { photoURL, updatedAt: new Date().toISOString() };
-    if (displayName) updateData.displayName = displayName;
-    
-    await updateDoc(docRef, updateData);
-
-    // Sync leaderboard photo/display name
-    const lbRef = doc(db, 'leaderboard', userId);
-    await setDoc(lbRef, updateData, { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, userPath);
   }
 }
 
 export async function fetchTopLeaderboard(): Promise<LeaderboardEntryData[]> {
+  const lbPath = 'leaderboard';
   try {
-    let entries: LeaderboardEntryData[] = [];
+    let snap;
     try {
-      const q = query(collection(db, 'leaderboard'), limit(60));
-      const snap = await getDocs(q);
-      entries = snap.docs.map(d => d.data() as LeaderboardEntryData);
-    } catch (queryErr) {
-      console.warn('Leaderboard query warning:', queryErr);
+      const q = query(collection(db, 'leaderboard'), orderBy('rating', 'desc'), limit(30));
+      snap = await getDocs(q);
+    } catch {
+      const q = query(collection(db, 'leaderboard'), limit(50));
+      snap = await getDocs(q);
     }
+    const entries = snap.docs.map(d => d.data() as LeaderboardEntryData);
     entries.sort((a, b) => {
       const rA = typeof a.rating === 'number' && Number.isFinite(a.rating) ? a.rating : 0;
       const rB = typeof b.rating === 'number' && Number.isFinite(b.rating) ? b.rating : 0;
@@ -323,9 +281,9 @@ export async function fetchTopLeaderboard(): Promise<LeaderboardEntryData[]> {
       if ((b.totalWins || 0) !== (a.totalWins || 0)) return (b.totalWins || 0) - (a.totalWins || 0);
       return (b.totalKills || 0) - (a.totalKills || 0);
     });
-    return entries.slice(0, 30);
+    return entries.slice(0, 25);
   } catch (err) {
-    console.error('Leaderboard fetch error:', err);
+    handleFirestoreError(err, OperationType.LIST, lbPath);
     return [];
   }
 }

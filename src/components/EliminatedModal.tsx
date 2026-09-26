@@ -90,42 +90,6 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
           </div>
         </div>
 
-        {/* Mode & Rank Rating Notice */}
-        {(() => {
-          const isRankedMode = gameState.mode === 'ranked';
-          if (!isRankedMode) {
-            return (
-              <div className="w-full mb-5 bg-slate-800/60 border border-slate-700/60 rounded-2xl p-2.5 text-center text-xs text-slate-400">
-                <span>🎮 モード: <strong className="text-slate-200 capitalize">{gameState.mode === 'bot' ? 'Bot Solo' : gameState.mode}</strong> (※レート・RPの変動は<strong className="text-amber-400">ランク戦(Ranked)</strong>限定です)</span>
-              </div>
-            );
-          }
-
-          const killPoints = Math.min(15, myPlayer.score * 3);
-          const placementPoints = otherAlive.length < 3 ? 10 : (otherAlive.length < 10 ? 5 : 0);
-          const totalPoints = killPoints + placementPoints;
-          return (
-            <div className="w-full mb-5 bg-gradient-to-r from-amber-500/10 via-yellow-500/15 to-amber-500/10 border border-yellow-500/40 rounded-2xl p-3 text-center">
-              <span className="text-[11px] font-black text-yellow-300 uppercase tracking-wider block mb-1">
-                🏆 ランク戦 レートポイント (RP) 獲得
-              </span>
-              <div className="flex items-center justify-center gap-3 text-xs font-bold">
-                <span className="text-emerald-400">撃破pt: +{killPoints} RP</span>
-                <span className="text-slate-400">/</span>
-                <span className={placementPoints >= 0 ? "text-sky-400" : "text-red-400"}>順位pt: {placementPoints >= 0 ? '+' : ''}{placementPoints} RP</span>
-                <span className="text-slate-400">→</span>
-                <span className={`font-black px-2.5 py-0.5 rounded ${
-                  totalPoints >= 0 
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
-                    : 'bg-red-500/20 text-red-300 border border-red-500/40'
-                }`}>
-                  {totalPoints >= 0 ? '+' : ''}{totalPoints} RP
-                </span>
-              </div>
-            </div>
-          );
-        })()}
-
         {/* Class Info */}
         <div className="text-xs text-slate-400 mb-6 bg-slate-800/50 px-4 py-2 rounded-full border border-white/5">
           使用兵科: <span className="font-bold text-slate-200">{CLASS_NAMES[myPlayer.characterClass] || myPlayer.characterClass}</span>

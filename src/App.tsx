@@ -18,7 +18,7 @@ import { LagMonitorModal } from './components/LagMonitorModal';
 import { ReviewModal } from './components/ReviewModal';
 import { auth, updateUserStats, UserProfileData } from './firebase';
 import { CharacterClass } from './types';
-import { RotateCcw, LogOut, Trophy, Flame, Sparkles, Users, UserPlus, Zap, Activity } from 'lucide-react';
+import { RotateCcw, LogOut, Trophy, Flame, Sparkles, Users, UserPlus, Zap, Activity, Copy, Check, Share2, ExternalLink } from 'lucide-react';
 import { getRankTier, RANK_CONFIGS } from './utils/rankUtils';
 
 // Isolated Matchmaking Lobby UI - updates its own countdown without re-rendering App/Canvas
@@ -29,34 +29,83 @@ const MatchLobbyBanner = React.memo(function MatchLobbyBanner() {
   const playerCount = useGameStore((s) => s.gameState ? Object.keys(s.gameState.players).length : 0);
   const totalOnline = useGameStore((s) => s.gameState?.totalOnlineCount || 1);
   const matchTimer = useGameStore((s) => s.gameState ? Math.ceil(s.gameState.matchTimer) : 0);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   if (!isWaiting) return null;
 
+  const isP2P = gameMode === 'p2p_duel';
+
+  const copyRoomCode = () => {
+    if (roomId) {
+      navigator.clipboard.writeText(roomId);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    }
+  };
+
+  const copyInviteUrl = () => {
+    if (roomId) {
+      const url = `${window.location.origin}${window.location.pathname}?p2p=${encodeURIComponent(roomId)}`;
+      navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
+
   return (
     <div className="absolute top-4 sm:top-8 left-0 right-0 flex justify-center pointer-events-none z-30 px-4">
-      <div className="bg-slate-900/95 text-white px-6 sm:px-10 py-3 sm:py-4 rounded-3xl font-bold border-2 border-yellow-400/60 shadow-[0_0_35px_rgba(250,204,21,0.4)] backdrop-blur-xl flex flex-col items-center gap-1.5 animate-in fade-in slide-in-from-top-4 duration-300">
+      <div className="bg-slate-900/95 text-white px-6 sm:px-10 py-3 sm:py-4 rounded-3xl font-bold border-2 border-yellow-400/60 shadow-[0_0_35px_rgba(250,204,21,0.4)] backdrop-blur-xl flex flex-col items-center gap-1.5 animate-in fade-in slide-in-from-top-4 duration-300 pointer-events-auto">
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-1 bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/40 text-[10px] sm:text-xs">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>オンライン: {totalOnline}人</span>
           </div>
-          <span className="text-xs sm:text-sm font-black text-yellow-300 uppercase tracking-widest">
-            {gameMode?.toUpperCase()} MATCH LOBBY
-            {gameMode === 'password' && ` • ROOM: ${roomId}`}
+          <span className="text-xs sm:text-sm font-black text-yellow-300 uppercase tracking-widest flex items-center gap-1">
+            {isP2P ? '⚡ P2P 1v1 DUEL LOBBY' : `${gameMode?.toUpperCase()} MATCH LOBBY`}
+            {(gameMode === 'password' || isP2P) && ` • ROOM: ${roomId}`}
           </span>
         </div>
         
-        <div className="flex items-center gap-3">
-          <span className="text-sm sm:text-base text-slate-300 font-bold">
-            👥 部屋人数: <strong className="text-white font-mono">{playerCount}</strong> 人
-          </span>
-          <span className="text-slate-500 font-light">|</span>
-          <span className="text-base sm:text-xl font-black text-amber-300 flex items-center gap-1">
-            ⏳ 開始まで: <span className="font-mono text-xl sm:text-2xl text-yellow-400 underline decoration-yellow-500/50">{matchTimer}秒</span>
-          </span>
-        </div>
+        {isP2P && playerCount < 2 ? (
+          <div className="flex flex-col items-center gap-2 my-1 text-center">
+            <div className="text-sm sm:text-base font-black text-amber-300 flex items-center gap-2">
+              <span className="animate-spin text-lg">⏳</span>
+              <span>対戦相手の入室を待機中... (1/2人)</span>
+            </div>
+            <div className="text-xs text-slate-300 flex items-center gap-2 flex-wrap justify-center">
+              <span>コード: <strong className="font-mono text-yellow-400 text-sm select-all">{roomId}</strong></span>
+              <button
+                type="button"
+                onClick={copyRoomCode}
+                className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs rounded-lg border border-amber-500/40 cursor-pointer font-bold transition-all flex items-center gap-1"
+              >
+                {copiedCode ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                <span>{copiedCode ? 'コピー完了' : 'コードをコピー'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={copyInviteUrl}
+                className="px-2.5 py-1 bg-indigo-600/40 hover:bg-indigo-600/60 text-indigo-200 text-xs rounded-lg border border-indigo-400/40 cursor-pointer font-bold transition-all flex items-center gap-1"
+              >
+                {copiedLink ? <Check size={12} className="text-emerald-400" /> : <Share2 size={12} />}
+                <span>{copiedLink ? 'URLコピー完了' : '招待URLをコピー'}</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="text-sm sm:text-base text-slate-300 font-bold">
+              👥 部屋人数: <strong className="text-white font-mono">{playerCount}</strong> 人
+            </span>
+            <span className="text-slate-500 font-light">|</span>
+            <span className="text-base sm:text-xl font-black text-amber-300 flex items-center gap-1">
+              ⏳ 開始まで: <span className="font-mono text-xl sm:text-2xl text-yellow-400 underline decoration-yellow-500/50">{matchTimer}秒</span>
+            </span>
+          </div>
+        )}
         <div className="text-[10px] sm:text-xs text-sky-300/90 font-medium">
-          ⚡ バトルバス発進準備中... まもなく降下開始！
+          {isP2P ? '⚡ 2人揃うと即座に1v1タイマンデュエルがスタートします！' : '⚡ バトルバス発進準備中... まもなく降下開始！'}
         </div>
       </div>
     </div>
@@ -179,7 +228,8 @@ export default function App() {
   const p2pNotice = useGameStore((s) => s.p2pNotice);
   const clearP2PNotice = useGameStore((s) => s.clearP2PNotice);
 
-  const [hasStarted, setHasStarted] = useState(false);
+  const hasStarted = useGameStore((s) => s.hasStarted);
+  const setHasStarted = useGameStore((s) => s.setHasStarted);
   const [isFriendsOpen, setIsFriendsOpen] = useState(false);
   const [isLagModalOpen, setIsLagModalOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
@@ -192,6 +242,29 @@ export default function App() {
   const [teamMatchType, setTeamMatchType] = useState<'pvp' | 'bot'>('pvp');
   const [lastProcessedMatch, setLastProcessedMatch] = useState<string | null>(null);
   const [cloudProfile, setCloudProfile] = useState<UserProfileData | null>(null);
+
+  // Dedicated P2P 1v1 state
+  const [p2pSubTab, setP2pSubTab] = useState<'create' | 'join'>('create');
+  const [p2pRoomInput, setP2pRoomInput] = useState('');
+  const [p2pGeneratedRoom, setP2pGeneratedRoom] = useState(() => 'P2P-' + Math.random().toString(36).substring(2, 6).toUpperCase());
+  const [urlP2pRoom, setUrlP2pRoom] = useState<string | null>(null);
+  const [copiedP2pCode, setCopiedP2pCode] = useState(false);
+  const [copiedP2pUrl, setCopiedP2pUrl] = useState(false);
+
+  // Check URL query parameters for direct P2P link (e.g. ?p2p=P2P-ABCD)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const p2pParam = params.get('p2p') || params.get('room');
+      if (p2pParam) {
+        const clean = p2pParam.trim().toUpperCase();
+        setUrlP2pRoom(clean);
+        setP2pRoomInput(clean);
+        setMode('p2p_duel');
+        setP2pSubTab('join');
+      }
+    } catch {}
+  }, []);
 
   // Register user UID for P2P direct matching upon login
   useEffect(() => {
@@ -230,72 +303,60 @@ export default function App() {
   // Synchronize cloud profile into active profile state
   useEffect(() => {
     if (cloudProfile) {
-      const activeVal = cloudProfile.rankPoints ?? cloudProfile.rating ?? 0;
       setProfile((prev: any) => ({
         ...prev,
         wins: cloudProfile.totalWins || 0,
-        rankPoints: activeVal,
-        rating: activeVal,
+        rankPoints: cloudProfile.rankPoints || 0,
+        rating: cloudProfile.rating && cloudProfile.rating >= 2000 ? cloudProfile.rating : null,
       }));
     }
   }, [cloudProfile]);
 
   const handleReturnToLobby = () => {
     // If player died during match and match was not yet recorded
-    if (myPlayerIsDead && roomId && roomId !== lastProcessedMatch) {
+    if (myPlayerIsDead && roomId && roomId !== lastProcessedMatch && auth.currentUser) {
       setLastProcessedMatch(roomId);
       const otherAliveCount = Object.values(useGameStore.getState().gameState?.players || {}).filter(p => !p.isDead && p.id !== myId).length;
       const finalPlacement = Math.max(2, otherAliveCount + 1);
       const myScore = myPlayerScore || 0;
       
       let ratingChange = 0;
-      let currentRankPoints = cloudProfile?.rankPoints ?? cloudProfile?.rating ?? profile.rankPoints ?? profile.rating ?? 0;
+      let currentRankPoints = cloudProfile?.rankPoints ?? profile.rankPoints ?? 0;
+      let currentRating: number | null = (cloudProfile?.rating && cloudProfile.rating >= 2000)
+        ? cloudProfile.rating
+        : (profile.rating && profile.rating >= 2000 ? profile.rating : null);
 
-      // Calculate Rank Points (RP) & Rating progression ONLY for Ranked mode ('ranked')
       if (gameMode === 'ranked') {
-        const killPoints = Math.min(15, myScore * 3);
-        const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : 0);
-        ratingChange = killPoints + placementPoints;
-        currentRankPoints = Math.max(0, currentRankPoints + ratingChange);
-      }
+        const penalty = 10;
+        ratingChange = -penalty;
+        if (currentRating !== null) {
+          currentRating = Math.max(2000.0, currentRating - 8.0);
+        } else {
+          currentRankPoints = Math.max(0, currentRankPoints - penalty);
+        }
 
-      const updated = {
-        wins: cloudProfile?.totalWins ?? profile.wins ?? 0,
-        streak: 0,
-        rankPoints: currentRankPoints,
-        rating: currentRankPoints,
-      };
-      setProfile(updated);
-      localStorage.setItem('poly_profile', JSON.stringify(updated));
-
-      if (auth.currentUser) {
-        const activeMode = gameMode || mode;
-        // Optimistically update cloudProfile immediately so it doesn't flicker or revert!
-        setCloudProfile(prev => prev ? {
-          ...prev,
+        const updated = {
+          wins: cloudProfile?.totalWins ?? profile.wins ?? 0,
+          streak: 0,
           rankPoints: currentRankPoints,
-          rating: currentRankPoints,
-          totalWins: updated.wins,
-          totalMatches: (prev.totalMatches || 0) + 1,
-        } : null);
-
-        updateUserStats(
-          auth.currentUser.uid,
-          false,
-          myScore,
-          1,
-          charClass,
-          ratingChange,
-          currentRankPoints,
-          activeMode,
-          myScore,
-          finalPlacement
-        ).then((updatedDoc) => {
-          if (updatedDoc) {
-            setCloudProfile(updatedDoc);
-          }
-        }).catch((err) => console.error('Error syncing match on lobby return:', err));
+          rating: currentRating,
+        };
+        setProfile(updated);
+        localStorage.setItem('poly_profile', JSON.stringify(updated));
       }
+
+      updateUserStats(
+        auth.currentUser.uid,
+        false,
+        myScore,
+        1,
+        charClass,
+        ratingChange,
+        currentRating !== null ? currentRating : currentRankPoints,
+        gameMode || 'casual',
+        myScore,
+        finalPlacement
+      ).catch((err) => console.error('Error syncing match on lobby return:', err));
     }
     leaveGame();
     setHasStarted(false);
@@ -305,68 +366,77 @@ export default function App() {
     leaveGame();
     setTimeout(() => {
       const resolvedName = cloudProfile?.displayName || (profile as any)?.displayName || '';
-      connect(mode, password, charClass, botCount, teamChoice, teamMatchType, resolvedName);
+      const duelRoom = mode === 'p2p_duel' ? (p2pSubTab === 'create' ? p2pGeneratedRoom : (p2pRoomInput.trim() || p2pGeneratedRoom)) : undefined;
+      connect(mode, password, charClass, botCount, teamChoice, teamMatchType, resolvedName, duelRoom);
       setHasStarted(true);
     }, 120);
   };
 
-  // Process Match End logic - updates Rating & Rank Points ONLY in Ranked mode
+  // Process Match End logic - ONLY Ranked Mode updates Rating & Rank Points
   useEffect(() => {
-    if (status === 'ended' && roomId && roomId !== lastProcessedMatch) {
-      setLastProcessedMatch(roomId);
+    if (status === 'ended' && roomId !== lastProcessedMatch) {
+      setLastProcessedMatch(roomId!);
       
       const isWin = winner === myId || (myPlayerTeam && winner === myPlayerTeam);
       const myScore = myPlayerScore || 0;
 
-      let currentRankPoints = Math.max(cloudProfile?.rankPoints ?? 0, profile.rankPoints ?? 0);
+      const currentRankPoints = cloudProfile?.rankPoints ?? profile.rankPoints ?? 0;
+      const currentRating: number | null = (cloudProfile?.rating && cloudProfile.rating >= 2000)
+        ? cloudProfile.rating
+        : (profile.rating && profile.rating >= 2000 ? profile.rating : null);
 
       let newWins = (cloudProfile?.totalWins ?? profile.wins ?? 0) + (isWin ? 1 : 0);
       let newStreak = isWin ? ((profile.streak || 0) + 1) : 0;
       let newRankPoints = currentRankPoints;
+      let newRating: number | null = currentRating;
       let ratingChange = 0;
 
-      // Rate & RP only changes in Ranked mode!
+      // STRICT RULE: Only modify rank points and rating in RANKED match mode!
       if (gameMode === 'ranked') {
         if (isWin) {
-          const killBonus = Math.min(15, myScore * 3);
-          const streakBonus = Math.min(10, newStreak * 2);
-          ratingChange = 20 + killBonus + streakBonus;
-        } else {
-          const killPoints = Math.min(15, myScore * 3);
-          const otherAliveCount = Object.values(useGameStore.getState().gameState?.players || {}).filter(p => !p.isDead && p.id !== myId).length;
-          const finalPlacement = Math.max(2, otherAliveCount + 1);
-          const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : 0);
+          const killBonus = Math.min(12, myScore * 3);
+          const streakBonus = Math.min(6, newStreak * 2);
+          const pointsEarned = 15 + killBonus + streakBonus;
           
-          ratingChange = killPoints + placementPoints;
+          if (newRating === null) {
+            ratingChange = pointsEarned;
+            newRankPoints += pointsEarned;
+            if (newRankPoints >= 2000) {
+              newRating = 2000.0 + (newStreak * 5);
+            }
+          } else {
+            ratingChange = 5.0 + Math.min(5, myScore) + Math.min(5, newStreak * 1.0);
+            newRating += ratingChange;
+          }
+        } else {
+          if (newRating !== null) {
+            const penalty = 8.0;
+            ratingChange = -penalty;
+            newRating = Math.max(2000.0, newRating - penalty);
+          } else {
+            const penalty = 10;
+            ratingChange = -penalty;
+            newRankPoints = Math.max(0, newRankPoints - penalty);
+          }
         }
-        newRankPoints = Math.max(0, currentRankPoints + ratingChange);
       }
 
       const newProfile = {
         wins: newWins,
         streak: newStreak,
         rankPoints: newRankPoints,
-        rating: newRankPoints,
+        rating: newRating,
       };
 
       setProfile(newProfile);
       localStorage.setItem('poly_profile', JSON.stringify(newProfile));
 
-      // Optimistically update cloudProfile immediately so UI never reverts!
-      setCloudProfile(prev => prev ? {
-        ...prev,
-        rankPoints: newRankPoints,
-        rating: newRankPoints,
-        totalWins: newWins,
-        totalMatches: (prev.totalMatches || 0) + 1,
-      } : null);
-
       // Sync stats to Firebase Firestore if logged in
       if (auth.currentUser) {
         const deaths = isWin ? 0 : 1;
+        const finalRating = newRating !== null ? newRating : newRankPoints;
         const otherAliveCount = Object.values(useGameStore.getState().gameState?.players || {}).filter(p => !p.isDead && p.id !== myId).length;
         const finalPlacement = isWin ? 1 : Math.max(2, otherAliveCount + 1);
-        const activeMode = gameMode || mode;
 
         updateUserStats(
           auth.currentUser.uid,
@@ -375,20 +445,26 @@ export default function App() {
           deaths,
           charClass,
           ratingChange,
-          newRankPoints,
-          activeMode,
+          finalRating,
+          gameMode || 'casual',
           myScore,
           finalPlacement
-        ).then((updatedDoc) => {
-          if (updatedDoc) {
-            setCloudProfile(updatedDoc);
-          }
+        ).then(() => {
+          setCloudProfile(prev => prev ? {
+            ...prev,
+            totalWins: newWins,
+            totalKills: prev.totalKills + myScore,
+            totalMatches: prev.totalMatches + 1,
+            rankPoints: newRankPoints,
+            rating: newRating ?? undefined,
+          } : null);
         }).catch((err) => console.error('Error syncing match to Firebase:', err));
       }
     }
   }, [status, roomId, winner, gameMode]);
 
-  const getRankName = (points: number) => {
+  const getRankName = (points: number, rating: number | null) => {
+    if (rating !== null) return `God`;
     if (points < 150) return 'Beginner';
     if (points < 300) return 'Bronze';
     if (points < 500) return 'Silver';
@@ -400,15 +476,17 @@ export default function App() {
     return `God`;
   };
 
-  const activePoints = Math.max(cloudProfile?.rankPoints ?? 0, profile.rankPoints ?? 0);
-  const activeRating = Math.max(cloudProfile?.rating ?? 0, profile.rating ?? 0);
+  const activePoints = cloudProfile?.rankPoints ?? profile.rankPoints;
+  const activeRating = cloudProfile?.rating ?? profile.rating;
   const currentTier = getRankTier(activePoints, activeRating);
   const tierConfig = RANK_CONFIGS[currentTier];
-  const displayRate = activePoints;
+  const displayRate = activeRating !== null ? activeRating.toFixed(1) : activePoints;
 
-  const handleJoin = () => {
+  const handleJoin = (targetP2pRoom?: string | React.MouseEvent) => {
     const resolvedName = cloudProfile?.displayName || (profile as any)?.displayName || '';
-    connect(mode, password, charClass, botCount, teamChoice, teamMatchType, resolvedName);
+    const specifiedP2p = typeof targetP2pRoom === 'string' ? targetP2pRoom : undefined;
+    const duelRoom = specifiedP2p || (mode === 'p2p_duel' ? (p2pSubTab === 'create' ? p2pGeneratedRoom : (p2pRoomInput.trim() || p2pGeneratedRoom)) : undefined);
+    connect(mode, password, charClass, botCount, teamChoice, teamMatchType, resolvedName, duelRoom);
     setHasStarted(true);
   };
 
@@ -477,9 +555,20 @@ export default function App() {
           </button>
         </div>
 
-        <FirebaseAccount onUserLoaded={setCloudProfile} externalProfile={cloudProfile || profile} />
+        <FirebaseAccount onUserLoaded={setCloudProfile} />
         
         <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mb-2 max-w-3xl">
+          <button 
+            onClick={() => setMode('p2p_duel')} 
+            className={`px-3.5 sm:px-5 py-2 sm:py-3 rounded-xl font-black text-sm sm:text-lg transition-all shadow-lg flex items-center gap-1.5 sm:gap-2 cursor-pointer ${
+              mode === 'p2p_duel' 
+                ? 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 ring-2 ring-amber-300 scale-105 shadow-amber-500/30' 
+                : 'bg-slate-800 text-amber-300 border border-amber-500/40 hover:bg-slate-700'
+            }`}
+          >
+            <Zap size={18} className="fill-current text-slate-950" />
+            <span>⚡ P2P 1v1対戦</span>
+          </button>
           <button 
             onClick={() => setMode('bot')} 
             className={`px-3.5 sm:px-5 py-2 sm:py-3 rounded-xl font-black text-sm sm:text-lg transition-all shadow-lg flex items-center gap-1.5 sm:gap-2 ${
@@ -526,12 +615,189 @@ export default function App() {
 
         {/* Mode subtitle explanation */}
         <div className="text-[11px] sm:text-xs text-slate-400 font-medium mb-3 sm:mb-4 min-h-4 flex items-center justify-center">
+          {mode === 'p2p_duel' && '⚡ 超低遅延 WebRTCダイレクト通信！タイマン1v1デュエル'}
           {mode === 'bot' && `🤖 待ち時間なし！${botCount}体の自律型AI Botと大乱闘バトルロイヤル`}
           {mode === 'casual' && '⚔️ オンラインの他プレイヤーと通常マッチング'}
           {mode === 'team' && '🛡️ 赤チーム vs 青チームの陣営対抗戦（1ライフ制）'}
           {mode === 'ranked' && '🏆 勝敗でレートが増減する本格ランクバトル'}
           {mode === 'password' && '🔒 合言葉を設定してフレンド同士でプライベート対戦'}
         </div>
+
+        {/* Direct P2P Room Link Detected Toast Banner */}
+        {urlP2pRoom && (
+          <div className="mb-4 bg-gradient-to-r from-amber-500/20 via-yellow-500/20 to-amber-500/20 border-2 border-amber-400/80 rounded-2xl p-4 w-full max-w-md flex flex-col items-center gap-2 shadow-[0_0_30px_rgba(245,158,11,0.3)] animate-pulse">
+            <div className="text-amber-300 text-sm font-black flex items-center gap-1.5">
+              <Zap size={18} className="text-yellow-400 fill-yellow-400" />
+              <span>P2P 1v1 招待リンクを検出しました！</span>
+            </div>
+            <div className="text-xs text-slate-300">
+              対象ルーム: <strong className="text-yellow-300 font-mono text-base">{urlP2pRoom}</strong>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleJoin(urlP2pRoom)}
+              className="mt-1 px-6 py-2.5 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-black text-sm rounded-xl shadow-lg transition-all active:scale-95 cursor-pointer flex items-center gap-2"
+            >
+              <span>⚔️ この部屋に今すぐ参戦！</span>
+            </button>
+          </div>
+        )}
+
+        {mode === 'p2p_duel' && (
+          <div className="mb-4 bg-slate-800/95 border-2 border-amber-500/50 rounded-2xl p-4 sm:p-5 w-full max-w-lg flex flex-col items-center gap-4 shadow-2xl backdrop-blur-md">
+            <div className="flex items-center justify-between w-full border-b border-amber-500/20 pb-3 flex-wrap gap-2">
+              <div className="text-left">
+                <div className="text-base font-black text-white flex items-center gap-2">
+                  <Zap size={20} className="text-amber-400 fill-amber-400" />
+                  <span>P2P 1v1 タイマン対戦</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                    WebRTC Direct
+                  </span>
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  プレイヤー同士を直接繋ぐ超低遅延通信（相手と2人きりでバトル）
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFriendsOpen(true)}
+                className="px-3 py-1.5 bg-slate-700/80 hover:bg-slate-700 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <Users size={14} />
+                <span>フレンド招待</span>
+              </button>
+            </div>
+
+            {/* Sub-tabs: Host create or Guest join */}
+            <div className="grid grid-cols-2 gap-2 w-full">
+              <button
+                type="button"
+                onClick={() => setP2pSubTab('create')}
+                className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  p2pSubTab === 'create'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 ring-2 ring-amber-300 shadow-md scale-102'
+                    : 'bg-slate-900/80 text-slate-300 hover:bg-slate-700/80'
+                }`}
+              >
+                <span>👑 部屋を作る (ホスト)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setP2pSubTab('join')}
+                className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  p2pSubTab === 'join'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 ring-2 ring-amber-300 shadow-md scale-102'
+                    : 'bg-slate-900/80 text-slate-300 hover:bg-slate-700/80'
+                }`}
+              >
+                <span>🚪 コードで参加 (ゲスト)</span>
+              </button>
+            </div>
+
+            {p2pSubTab === 'create' ? (
+              <div className="w-full space-y-3 bg-slate-950/70 p-3.5 rounded-xl border border-amber-500/20 text-left">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs font-bold text-slate-300">発行されたルームコード:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setP2pGeneratedRoom('P2P-' + Math.random().toString(36).substring(2, 6).toUpperCase());
+                    }}
+                    className="text-[11px] text-amber-400 hover:underline cursor-pointer"
+                  >
+                    🔄 新しいコードを再生成
+                  </button>
+                </div>
+                
+                <div className="flex items-center justify-between bg-slate-900 border-2 border-amber-400/60 rounded-xl px-4 py-2.5 flex-wrap gap-2">
+                  <span className="text-2xl font-black font-mono tracking-widest text-amber-300 select-all">
+                    {p2pGeneratedRoom}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(p2pGeneratedRoom);
+                        setCopiedP2pCode(true);
+                        setTimeout(() => setCopiedP2pCode(false), 2000);
+                      }}
+                      className="px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-xs font-bold border border-amber-500/40 cursor-pointer flex items-center gap-1"
+                    >
+                      {copiedP2pCode ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      <span>{copiedP2pCode ? 'コピー済' : 'コードコピー'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = `${window.location.origin}${window.location.pathname}?p2p=${encodeURIComponent(p2pGeneratedRoom)}`;
+                        navigator.clipboard.writeText(url);
+                        setCopiedP2pUrl(true);
+                        setTimeout(() => setCopiedP2pUrl(false), 2000);
+                      }}
+                      className="px-2.5 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 rounded-lg text-xs font-bold border border-indigo-400/40 cursor-pointer flex items-center gap-1"
+                    >
+                      {copiedP2pUrl ? <Check size={13} className="text-emerald-400" /> : <Share2 size={13} />}
+                      <span>{copiedP2pUrl ? 'URLコピー済' : '招待URL'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 flex-wrap gap-1">
+                  <span>友達にコードや招待リンクを伝えて、参加してもらいましょう！</span>
+                  <a
+                    href={`https://everychat-Waseda.web.app/?text=${encodeURIComponent(`${window.location.origin}${window.location.pathname}?p2p=${p2pGeneratedRoom}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-300 hover:text-indigo-200 font-bold underline flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <span>💬 everychatで募集</span>
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full space-y-3 bg-slate-950/70 p-3.5 rounded-xl border border-amber-500/20 text-left">
+                <label className="block text-xs font-bold text-slate-300">
+                  対戦相手から教えてもらった「ルームコード」またはURLを入力:
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={p2pRoomInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.includes('p2p=')) {
+                        try {
+                          const u = new URL(val);
+                          const p = u.searchParams.get('p2p');
+                          if (p) {
+                            setP2pRoomInput(p.toUpperCase());
+                            return;
+                          }
+                        } catch {}
+                      }
+                      setP2pRoomInput(val.toUpperCase());
+                    }}
+                    placeholder="例: P2P-AB12"
+                    className="flex-1 bg-slate-900 border border-slate-700 focus:border-amber-400 rounded-xl px-4 py-2.5 text-base font-mono font-bold text-yellow-300 tracking-wider focus:outline-none focus:ring-1 focus:ring-amber-400 text-center uppercase"
+                  />
+                  {p2pRoomInput && (
+                    <button
+                      type="button"
+                      onClick={() => setP2pRoomInput('')}
+                      className="px-3 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl text-xs cursor-pointer"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  招待URL全体を貼り付けても自動でコードを抽出します。
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {mode === 'bot' && (
           <div className="mb-4 bg-slate-800/90 border border-purple-500/40 rounded-2xl p-3 sm:p-4 w-full max-w-md flex flex-col items-center gap-2.5 shadow-xl">

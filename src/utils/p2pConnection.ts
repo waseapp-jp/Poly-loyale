@@ -16,6 +16,7 @@ class P2PManager {
   private pingTime: number = 0;
   private lastPingSent: number = 0;
   private pingInterval: number | null = null;
+  private pendingCandidates: RTCIceCandidateInit[] = [];
 
   private onSignalCallback: ((signal: P2PSignal) => void) | null = null;
   private onDataCallback: ((data: any) => void) | null = null;
@@ -25,6 +26,8 @@ class P2PManager {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
   ];
 
   public getState(): P2PState {
@@ -53,6 +56,7 @@ class P2PManager {
     this.onSignalCallback = onSignal;
     this.onDataCallback = onData;
     this.onStateCallback = onState;
+    this.pendingCandidates = [];
     this.setState('connecting');
 
     try {
@@ -82,7 +86,7 @@ class P2PManager {
         }
       };
 
-      // Create DataChannel with low latency settings
+      // Create DataChannel with ultra-low latency unordered settings
       this.dataChannel = this.pc.createDataChannel('poly_p2p_channel', {
         ordered: false,
         maxRetransmits: 0,
@@ -116,6 +120,7 @@ class P2PManager {
     this.onSignalCallback = onSignal;
     this.onDataCallback = onData;
     this.onStateCallback = onState;
+    this.pendingCandidates = [];
     this.setState('connecting');
 
     try {
@@ -155,13 +160,22 @@ class P2PManager {
     }
   }
 
-  // Process incoming SDP offer/answer or ICE candidate
+  // Process incoming SDP offer/answer or ICE candidate with queueing
   public async handleIncomingSignal(signal: P2PSignal) {
     if (!this.pc) return;
 
     try {
       if (signal.type === 'offer' && !this.isHost) {
         await this.pc.setRemoteDescription(new RTCSessionDescription(signal.sdp!));
+        
+        // Drain pending candidates that arrived before remote description
+        while (this.pendingCandidates.length > 0) {
+          const cand = this.pendingCandidates.shift();
+          if (cand) {
+            await this.pc.addIceCandidate(new RTCIceCandidate(cand));
+          }
+        }
+
         const answer = await this.pc.createAnswer();
         await this.pc.setLocalDescription(answer);
 
@@ -173,8 +187,20 @@ class P2PManager {
         }
       } else if (signal.type === 'answer' && this.isHost) {
         await this.pc.setRemoteDescription(new RTCSessionDescription(signal.sdp!));
+        
+        // Drain pending candidates
+        while (this.pendingCandidates.length > 0) {
+          const cand = this.pendingCandidates.shift();
+          if (cand) {
+            await this.pc.addIceCandidate(new RTCIceCandidate(cand));
+          }
+        }
       } else if (signal.type === 'candidate' && signal.candidate) {
-        await this.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        if (this.pc.remoteDescription && this.pc.remoteDescription.type) {
+          await this.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } else {
+          this.pendingCandidates.push(signal.candidate);
+        }
       }
     } catch (err) {
       console.warn('P2P Signal handle error:', err);
@@ -215,8 +241,7 @@ class P2PManager {
         if (this.onDataCallback) {
           this.onDataCallback(parsed);
         }
-      } catch (e) {
-        // Raw data
+      } catch {
         if (this.onDataCallback) {
           this.onDataCallback(event.data);
         }
@@ -253,13 +278,14 @@ class P2PManager {
       this.pingInterval = null;
     }
     if (this.dataChannel) {
-      this.dataChannel.close();
+      try { this.dataChannel.close(); } catch {}
       this.dataChannel = null;
     }
     if (this.pc) {
-      this.pc.close();
+      try { this.pc.close(); } catch {}
       this.pc = null;
     }
+    this.pendingCandidates = [];
     this.state = 'idle';
     this.pingTime = 0;
   }

@@ -43,20 +43,7 @@ function generateObstacles(): Record<string, Obstacle> {
 
   const addObs = (x: number, z: number, width: number, depth: number, height: number, type: Obstacle['type'], color?: string) => {
     const id = `obs_${++counter}_${Math.random().toString(36).substring(2, 6)}`;
-    const isDestructible = type === 'crate';
-    obs[id] = {
-      id,
-      x,
-      z,
-      width,
-      depth,
-      height,
-      type,
-      color,
-      isDestructible,
-      hp: isDestructible ? 40 : undefined,
-      maxHp: isDestructible ? 40 : undefined,
-    };
+    obs[id] = { id, x, z, width, depth, height, type, color };
   };
 
   const addRamp = (x: number, z: number, width: number, depth: number, height: number, rampDir: Obstacle['rampDir'], color?: string) => {
@@ -430,7 +417,7 @@ function createDynamicState(room: GameState, isDeltaTick = false) {
     const roundedRy = Math.round(p.ry * 100) / 100;
     const roundedHp = Math.round(p.health);
 
-    const flagsStr = `${p.isRolling ? 1 : 0}${p.isFlying ? 1 : 0}${p.hasShield ? 1 : 0}${p.isInvulnerable ? 1 : 0}${p.inBus ? 1 : 0}${p.isSkydiving ? 1 : 0}${p.isGliding ? 1 : 0}${p.isHealing ? 1 : 0}${p.isShadowStealth ? 1 : 0}${p.subWeapon || ''}`;
+    const flagsStr = `${p.isRolling ? 1 : 0}${p.isFlying ? 1 : 0}${p.hasShield ? 1 : 0}${p.isInvulnerable ? 1 : 0}${p.inBus ? 1 : 0}${p.isSkydiving ? 1 : 0}${p.isGliding ? 1 : 0}${p.isHealing ? 1 : 0}`;
 
     const prev = roomSnaps[pid];
     const moved = !prev || Math.abs(roundedX - prev.x) >= 0.15 || Math.abs(roundedY - prev.y) >= 0.15 || Math.abs(roundedZ - prev.z) >= 0.15 || Math.abs(roundedRy - prev.ry) >= 0.08;
@@ -477,15 +464,6 @@ function createDynamicState(room: GameState, isDeltaTick = false) {
         baseP.isHealing = true;
         baseP.healProgress = p.healProgress ? Math.round(p.healProgress * 10) / 10 : 0;
       }
-      if (p.subWeapon) baseP.subWeapon = p.subWeapon;
-      if (p.speedBuffUntil && p.speedBuffUntil > now) baseP.speedBuffUntil = p.speedBuffUntil;
-      if (p.powerBuffUntil && p.powerBuffUntil > now) baseP.powerBuffUntil = p.powerBuffUntil;
-      if (p.isShadowStealth) baseP.isShadowStealth = true;
-      if (p.shadowStealthUntil && p.shadowStealthUntil > now) baseP.shadowStealthUntil = p.shadowStealthUntil;
-      if (p.isBlindedUntil && p.isBlindedUntil > now) {
-        baseP.isBlindedUntil = p.isBlindedUntil;
-        baseP.blindIntensity = p.blindIntensity;
-      }
 
       if (!isDeltaTick || !prev || prev.team !== p.team) {
         baseP.maxHealth = p.maxHealth;
@@ -521,7 +499,6 @@ function createDynamicState(room: GameState, isDeltaTick = false) {
         z: Math.round(b.z * 10) / 10,
         exploded: b.exploded,
         isMine: b.isMine,
-        bombType: b.bombType,
       };
     }
     roomHadBombs[roomId] = true;
@@ -556,7 +533,6 @@ function createDynamicState(room: GameState, isDeltaTick = false) {
     players: compressedPlayers,
     items: itemsPayload,
     bombs: bombsPayload,
-    smokeClouds: room.smokeClouds,
     battleBus: room.battleBus ? {
       active: room.battleBus.active,
       startX: Math.round(room.battleBus.startX * 10) / 10,
@@ -1012,7 +988,8 @@ async function startServer() {
       const displayName = (options.playerName || '').trim().slice(0, 16) || `Player_${socket.id.substring(0, 4)}`;
 
       if (options.mode === 'p2p_duel') {
-        roomId = options.p2pRoomId || 'p2p_' + socket.id.substring(0, 6);
+        const rawP2p = (options.p2pRoomId || '').trim();
+        roomId = rawP2p ? (rawP2p.toUpperCase().startsWith('P2P-') ? rawP2p.toUpperCase() : 'P2P-' + rawP2p.toUpperCase()) : 'P2P-' + Math.random().toString(36).substring(2, 6).toUpperCase();
       } else if (options.mode === 'bot') {
         roomId = 'bot_' + socket.id.substring(0, 6) + '_' + Math.random().toString(36).substring(2, 6);
       } else if (options.mode === 'casual') {
@@ -1093,13 +1070,15 @@ async function startServer() {
 
       if (!rooms[roomId]) {
         const obstacles = generateObstacles();
-        const initialTimer = options.mode === 'bot' || options.mode === 'p2p_duel' || (options.mode === 'team' && teamMatchType === 'bot')
-          ? 2
-          : options.mode === 'team'
-            ? 10
-            : options.mode === 'ranked'
-              ? 30
-              : 10;
+        const initialTimer = options.mode === 'p2p_duel'
+          ? 10
+          : options.mode === 'bot' || (options.mode === 'team' && teamMatchType === 'bot')
+            ? 2
+            : options.mode === 'team'
+              ? 10
+              : options.mode === 'ranked'
+                ? 30
+                : 10;
 
         rooms[roomId] = {
           roomId,
@@ -1233,6 +1212,18 @@ async function startServer() {
 
       socket.emit('init', { id: socket.id, state: room });
       broadcastRoomState(io, room);
+
+      if (room.mode === 'p2p_duel') {
+        const otherHumans = Object.values(room.players).filter(p => !p.isBot && p.id !== socket.id);
+        if (otherHumans.length > 0) {
+          const hostPlayer = otherHumans[0];
+          io.to(roomId).emit('p2p_peers_ready', {
+            hostId: hostPlayer.id,
+            guestId: socket.id,
+            roomId,
+          });
+        }
+      }
       } catch (err) {
         console.error('[CRASH PREVENTION] Error in socket join handler:', err);
       }
@@ -1293,9 +1284,6 @@ async function startServer() {
             player.y = groundH + 1;
             player.isSkydiving = false;
             player.isGliding = false;
-            // 3.5s landing invulnerability to prevent instant bot eliminate upon touching ground
-            player.isInvulnerable = true;
-            (player as any).landingInvulnerableUntil = Date.now() + 3500;
           }
         }
       }
@@ -1311,78 +1299,10 @@ async function startServer() {
         const dx = player.x - item.x;
         const dz = player.z - item.z;
         if (dx * dx + dz * dz < 9) { // 3 units radius
-          if (item.type === 'heal') {
-            player.heals++;
-          } else if (item.type === 'weapon') {
-            player.weaponLevel = Math.min(3, player.weaponLevel + 1);
-          } else {
-            // Consumable & Sub-weapons (Speed, Power, Smoke, Stun, Shadow)
-            player.subWeapon = item.type;
-          }
+          if (item.type === 'heal') player.heals++;
+          if (item.type === 'weapon') player.weaponLevel = Math.min(3, player.weaponLevel + 1);
           delete room.items[itemId];
           markItemsDirty(roomId);
-        }
-      }
-
-      // Handle Sub-Weapon / Consumable Activation
-      if (input.useSubWeapon && player.subWeapon && !player.isDead) {
-        const sub = player.subWeapon;
-        if (sub === 'speed') {
-          player.speedBuffUntil = now + 15000;
-          player.subWeapon = null;
-        } else if (sub === 'power') {
-          player.powerBuffUntil = now + 15000;
-          player.subWeapon = null;
-        } else if (sub === 'shadow') {
-          player.shadowStealthUntil = now + 15000;
-          player.isShadowStealth = true;
-          player.subWeapon = null;
-        } else if (sub === 'smoke') {
-          const bombId = 'smoke_' + Math.random().toString(36).substring(2);
-          const throwSpeed = 34;
-          const throwVy = 12;
-          const dirX = -Math.sin(player.ry);
-          const dirZ = -Math.cos(player.ry);
-          room.bombs[bombId] = {
-            id: bombId,
-            ownerId: player.id,
-            x: player.x + dirX * 1.5,
-            y: player.y + 0.2,
-            z: player.z + dirZ * 1.5,
-            vx: dirX * throwSpeed,
-            vy: throwVy,
-            vz: dirZ * throwSpeed,
-            rx: 0,
-            ry: 0,
-            rz: 0,
-            createdAt: now,
-            exploded: false,
-            bombType: 'smoke',
-          };
-          player.subWeapon = null;
-        } else if (sub === 'stun') {
-          const bombId = 'stun_' + Math.random().toString(36).substring(2);
-          const throwSpeed = 36;
-          const throwVy = 13;
-          const dirX = -Math.sin(player.ry);
-          const dirZ = -Math.cos(player.ry);
-          room.bombs[bombId] = {
-            id: bombId,
-            ownerId: player.id,
-            x: player.x + dirX * 1.5,
-            y: player.y + 0.2,
-            z: player.z + dirZ * 1.5,
-            vx: dirX * throwSpeed,
-            vy: throwVy,
-            vz: dirZ * throwSpeed,
-            rx: 0,
-            ry: 0,
-            rz: 0,
-            createdAt: now,
-            exploded: false,
-            bombType: 'stun',
-          };
-          player.subWeapon = null;
         }
       }
 
@@ -1443,7 +1363,6 @@ async function startServer() {
               rz: Math.random() * Math.PI,
               createdAt: now,
               exploded: false,
-              bombType: 'bomb',
             };
           } else if (player.characterClass === 'sword') {
             player.isInvulnerable = true;
@@ -1490,12 +1409,6 @@ async function startServer() {
       // Allow shooting while flying (jetpack aerial combat), but stop if healing or actively rolling
       if (input.isShooting && !player.isRolling && !player.isHealing && now - player.lastShootTime > shootCooldown) {
         player.lastShootTime = now;
-
-        // Cancel shadow stealth immediately upon attacking
-        if (player.isShadowStealth || (player.shadowStealthUntil && player.shadowStealthUntil > now)) {
-          player.isShadowStealth = false;
-          player.shadowStealthUntil = 0;
-        }
         
         let hitSomeone = false;
         let hitTargetId: string | null = null;
@@ -1615,15 +1528,8 @@ async function startServer() {
               if (room.mode === 'team' && target.team === player.team) continue;
 
               target.lastDamagedTime = now;
-              // Cancel target shadow stealth upon being damaged
-              if (target.isShadowStealth || (target.shadowStealthUntil && target.shadowStealthUntil > now)) {
-                target.isShadowStealth = false;
-                target.shadowStealthUntil = 0;
-              }
-
               const damageMult = target.hasShield ? 0.5 : 1;
-              const powerMult = (player.powerBuffUntil && player.powerBuffUntil > now) ? 1.5 : 1.0;
-              const damageAmount = Math.max(1, Math.round((stats.damage * weaponMultiplier * powerMult) * damageMult));
+              const damageAmount = Math.max(1, Math.round((stats.damage * weaponMultiplier) * damageMult));
               target.health -= damageAmount;
               hitSomeone = true;
               hitTargetId = targetId;
@@ -1663,14 +1569,12 @@ async function startServer() {
                 player.score += 1;
                 io.to(roomId).emit('playerDied', { id: targetId, killer: socket.id });
 
-                // Diverse item drops from eliminations (25% chance)
-                if (Math.random() < 0.25) {
-                  const dropTypes: ItemType[] = ['heal', 'weapon', 'speed', 'power', 'smoke', 'stun', 'shadow'];
-                  const pickedType = dropTypes[Math.floor(Math.random() * dropTypes.length)];
+                // Drastically reduced kill drop rate (only 5% chance total)
+                if (Math.random() < 0.05) {
                   const itemId = 'drop_' + Math.random().toString(36).substring(2);
                   room.items[itemId] = {
                     id: itemId,
-                    type: pickedType,
+                    type: Math.random() < 0.05 ? 'weapon' : 'heal',
                     x: target.x,
                     y: 1,
                     z: target.z,
@@ -1679,94 +1583,6 @@ async function startServer() {
                 }
               }
             }
-          }
-        }
-
-        // Check hitting destructible crates (木箱の破壊判定とアイテムドロップ)
-        const powerMult = (player.powerBuffUntil && player.powerBuffUntil > now) ? 1.5 : 1.0;
-        const attackDamage = Math.max(1, Math.round((stats.damage * weaponMultiplier * powerMult)));
-        
-        for (const obsId in room.obstacles) {
-          const obs = room.obstacles[obsId];
-          if (!obs.isDestructible) continue;
-          
-          const ox = obs.x;
-          const oy = obs.height / 2;
-          const oz = obs.z;
-          const dx = ox - px;
-          const dy = oy - py;
-          const dz = oz - pz;
-          const dist3D = Math.hypot(dx, dy, dz);
-          
-          if (dist3D > range) continue;
-          
-          let isCrateHit = false;
-          if (isSword) {
-            if (dist3D <= 13 && Math.abs(dy) <= 3.5) {
-              const horizDist = Math.hypot(dx, dz) || 1;
-              const fx = -Math.sin(player.ry);
-              const fz = -Math.cos(player.ry);
-              const horizDot = fx * (dx / horizDist) + fz * (dz / horizDist);
-              if (horizDot >= 0.35) {
-                isCrateHit = true;
-              }
-            }
-          } else {
-            const pDirX = dirX;
-            const pDirY = dirY;
-            const pDirZ = dirZ;
-            const dot3D = (pDirX * dx + pDirY * dy + pDirZ * dz) / (dist3D || 1);
-            const t = Math.max(0, Math.min(dist3D, pDirX * dx + pDirY * dy + pDirZ * dz));
-            const closestX = px + pDirX * t;
-            const closestY = py + pDirY * t;
-            const closestZ = pz + pDirZ * t;
-            const distToCenter = Math.hypot(ox - closestX, oy - closestY, oz - closestZ);
-            
-            if (distToCenter <= Math.max(obs.width, obs.depth) * 0.8 && dot3D >= 0.5) {
-              isCrateHit = true;
-            }
-          }
-          
-          if (isCrateHit) {
-            hitSomeone = true;
-            hitPos = { x: ox, y: oy, z: oz };
-            obs.hp = (obs.hp || 40) - attackDamage;
-            
-            io.to(roomId).emit('damageDealt', {
-              id: Math.random().toString(36).substring(2),
-              targetId: obs.id,
-              attackerId: socket.id,
-              x: ox,
-              y: oy + 0.5,
-              z: oz,
-              amount: attackDamage,
-              isSword,
-            });
-            
-            if (obs.hp <= 0) {
-              // Destroy Crate & Drop Loot!
-              delete room.obstacles[obsId];
-              buildRoomSpatialData(roomId, room.obstacles);
-              
-              // 100% guarantee a drop from breaking wooden crates!
-              const lootPool: ItemType[] = ['speed', 'power', 'weapon', 'heal', 'smoke', 'stun', 'shadow'];
-              const lootType = lootPool[Math.floor(Math.random() * lootPool.length)];
-              const newItemId = 'crate_drop_' + Math.random().toString(36).substring(2);
-              room.items[newItemId] = {
-                id: newItemId,
-                type: lootType,
-                x: ox,
-                y: 0.5,
-                z: oz,
-              };
-              markItemsDirty(roomId);
-              
-              io.to(roomId).emit('obstacleDestroyed', { id: obsId, x: ox, y: oy, z: oz });
-              io.to(roomId).emit('stateUpdate', { obstacles: room.obstacles });
-            } else {
-              io.to(roomId).emit('stateUpdate', { obstacles: room.obstacles });
-            }
-            break; // 1 crate hit per shot/slash
           }
         }
 
@@ -1926,20 +1742,22 @@ async function startServer() {
       }
     });
 
-    socket.on('p2p_signal', ({ targetUid, targetSocketId, signal, roomId: reqRoomId }: { targetUid?: string; targetSocketId?: string; signal: any; roomId?: string }) => {
+    socket.on('p2p_signal', ({ targetUid, targetSocketId, signal, roomId }: { targetUid?: string; targetSocketId?: string; signal: any; roomId?: string }) => {
       try {
-        const roomId = reqRoomId || socketRoom[socket.id];
         const destSocketId = targetSocketId || (targetUid ? userSockets[targetUid] : null);
-        if (destSocketId) {
+        if (destSocketId && io.sockets.sockets.get(destSocketId)) {
           io.to(destSocketId).emit('p2p_signal_received', {
             senderSocketId: socket.id,
             signal,
           });
-        } else if (roomId) {
-          socket.to(roomId).emit('p2p_signal_received', {
-            senderSocketId: socket.id,
-            signal,
-          });
+        } else {
+          const activeRoomId = roomId || socketRoom[socket.id];
+          if (activeRoomId) {
+            socket.to(activeRoomId).emit('p2p_signal_received', {
+              senderSocketId: socket.id,
+              signal,
+            });
+          }
         }
       } catch (err) {
         console.error('[CRASH PREVENTION] Error in p2p_signal handler:', err);
@@ -1997,123 +1815,99 @@ async function startServer() {
 
       const alivePlayers = Object.values(room.players).filter(p => !p.isDead);
 
-      // Clean up expired smoke clouds
-      if (room.smokeClouds) {
-        for (const cId in room.smokeClouds) {
-          if (now > room.smokeClouds[cId].expiresAt) {
-            delete room.smokeClouds[cId];
-          }
-        }
-      }
-
       if (room.status === 'waiting') {
-        // In 1v1 P2P Duel mode, hold lobby until both players connect
-        if (room.mode === 'p2p_duel') {
-          if (totalPlayers >= 2) {
-            room.matchTimer -= dt;
-          } else {
-            room.matchTimer = 5; // Wait for friend
-          }
-        } else if (totalPlayers >= 1) { 
-          room.matchTimer -= dt;
-          
-          if (room.mode === 'ranked' && totalPlayers >= 20) {
-            room.matchTimer = Math.min(room.matchTimer, 5);
-          }
-        }
-
-        if (room.matchTimer <= 0) {
-          room.status = 'playing';
-          room.items = {};
-          room.bombs = {};
-          room.smokeClouds = {};
-          room.winner = null;
-
-          // Diverse arena spawns: 50 items across the 200x200 arena
-          const ITEM_TYPES: ItemType[] = ['heal', 'weapon', 'speed', 'power', 'smoke', 'stun', 'shadow'];
-          const ITEM_WEIGHTS = [0.25, 0.20, 0.15, 0.15, 0.10, 0.10, 0.05];
-          const sampleItemType = (): ItemType => {
-            const r = Math.random();
-            let acc = 0;
-            for (let k = 0; k < ITEM_TYPES.length; k++) {
-              acc += ITEM_WEIGHTS[k];
-              if (r <= acc) return ITEM_TYPES[k];
-            }
-            return 'heal';
-          };
-
-          for (let i = 0; i < 50; i++) {
-            const id = Math.random().toString(36).substring(2);
-            room.items[id] = {
-              id,
-              type: sampleItemType(),
-              x: (Math.random() - 0.5) * (MAP_SIZE * 0.85),
-              y: 1,
-              z: (Math.random() - 0.5) * (MAP_SIZE * 0.85),
-            };
-          }
-          markItemsDirty(roomId);
-
-          // Initialize Battle Bus flight trajectory cutting across the map
-          const busAngle = Math.random() * Math.PI * 2;
-          const busFlightDistance = MAP_SIZE * 1.1; // 440 units
-          const startX = -Math.cos(busAngle) * (busFlightDistance / 2);
-          const startZ = -Math.sin(busAngle) * (busFlightDistance / 2);
-          const endX = Math.cos(busAngle) * (busFlightDistance / 2);
-          const endZ = Math.sin(busAngle) * (busFlightDistance / 2);
-
-          room.battleBus = {
-            active: true,
-            startX,
-            startZ,
-            endX,
-            endZ,
-            currentX: startX,
-            currentY: BUS_HEIGHT,
-            currentZ: startZ,
-            progress: 0,
-            duration: BUS_DURATION,
-            timeLeft: BUS_DURATION,
-          };
-
-          Object.values(room.players).forEach((p, index) => {
-            p.isDead = false;
-            p.health = CLASS_STATS[p.characterClass].maxHp;
-            p.heals = 0;
-            p.weaponLevel = 1;
-            p.subWeapon = null;
-            p.speedBuffUntil = 0;
-            p.powerBuffUntil = 0;
-            p.shadowStealthUntil = 0;
-            p.isShadowStealth = false;
-            p.x = startX;
-            p.y = BUS_HEIGHT;
-            p.z = startZ;
-            p.inBus = true;
-            p.isSkydiving = false;
-            p.isGliding = false;
-            p.isHealing = false;
-            p.isFlying = false;
-            p.isInvulnerable = false;
-            p.hasShield = false;
-            p.lastAbilityTime = 0;
-
-            if (p.isBot) {
-              const botExt = p as any;
-              botExt.busDropProgress = 0.08 + Math.random() * 0.78; // Random drop time
-              botExt.targetDropX = (Math.random() - 0.5) * (MAP_SIZE * 0.7);
-              botExt.targetDropZ = (Math.random() - 0.5) * (MAP_SIZE * 0.7);
-            }
-
-            if (room.mode === 'team') {
-              if (!p.team) {
-                p.team = index % 2 === 0 ? 'red' : 'blue';
-              }
-              p.color = p.team === 'red' ? '#ef4444' : '#3b82f6';
+        if (totalPlayers >= 1) { 
+          if (room.mode === 'p2p_duel') {
+            if (totalPlayers < 2) {
+              room.matchTimer = 10;
             } else {
-              p.color = CLASS_STATS[p.characterClass].color;
+              room.matchTimer = Math.min(room.matchTimer, 4);
+              room.matchTimer -= dt;
             }
-          });
+          } else {
+            room.matchTimer -= dt;
+            if (room.mode === 'ranked' && totalPlayers >= 20) {
+              room.matchTimer = Math.min(room.matchTimer, 5);
+            }
+          }
+
+          if (room.matchTimer <= 0) {
+            room.status = 'playing';
+            room.items = {};
+            room.bombs = {};
+            room.winner = null;
+
+            // Balanced map spawn: 40 items across the 200x200 arena
+            for (let i = 0; i < 40; i++) {
+              const id = Math.random().toString(36).substring(2);
+              room.items[id] = {
+                id,
+                type: Math.random() < 0.35 ? 'weapon' : 'heal',
+                x: (Math.random() - 0.5) * MAP_SIZE,
+                y: 1,
+                z: (Math.random() - 0.5) * MAP_SIZE,
+              };
+            }
+            markItemsDirty(roomId);
+
+            // Initialize Battle Bus flight trajectory cutting across the map
+            const busAngle = Math.random() * Math.PI * 2;
+            const busFlightDistance = MAP_SIZE * 1.1; // 440 units
+            const startX = -Math.cos(busAngle) * (busFlightDistance / 2);
+            const startZ = -Math.sin(busAngle) * (busFlightDistance / 2);
+            const endX = Math.cos(busAngle) * (busFlightDistance / 2);
+            const endZ = Math.sin(busAngle) * (busFlightDistance / 2);
+
+            room.battleBus = {
+              active: true,
+              startX,
+              startZ,
+              endX,
+              endZ,
+              currentX: startX,
+              currentY: BUS_HEIGHT,
+              currentZ: startZ,
+              progress: 0,
+              duration: BUS_DURATION,
+              timeLeft: BUS_DURATION,
+            };
+
+            Object.values(room.players).forEach((p, index) => {
+              p.isDead = false;
+              p.health = CLASS_STATS[p.characterClass].maxHp;
+              p.heals = 0;
+              p.weaponLevel = 1;
+              p.x = startX;
+              p.y = BUS_HEIGHT;
+              p.z = startZ;
+              p.inBus = true;
+              p.isSkydiving = false;
+              p.isGliding = false;
+              p.isHealing = false;
+              p.isFlying = false;
+              p.isInvulnerable = false;
+              p.hasShield = false;
+              p.lastAbilityTime = 0;
+
+              if (p.isBot) {
+                const botExt = p as any;
+                botExt.busDropProgress = 0.08 + Math.random() * 0.78; // Random drop time
+                botExt.targetDropX = (Math.random() - 0.5) * (MAP_SIZE * 0.7);
+                botExt.targetDropZ = (Math.random() - 0.5) * (MAP_SIZE * 0.7);
+              }
+
+              if (room.mode === 'team') {
+                if (!p.team) {
+                  p.team = index % 2 === 0 ? 'red' : 'blue';
+                }
+                p.color = p.team === 'red' ? '#ef4444' : '#3b82f6';
+              } else {
+                p.color = CLASS_STATS[p.characterClass].color;
+              }
+            });
+          }
+        } else {
+          room.matchTimer = room.mode === 'ranked' ? 30 : (room.mode === 'bot' || room.mode === 'team') ? 3 : 10;
         }
       } else if (room.status === 'playing') {
         
@@ -2180,20 +1974,10 @@ async function startServer() {
             p.y = groundH + 1;
           }
 
-          // Reset abilities & landing invulnerability after duration
+          // Reset abilities after duration
           const ability = CLASS_ABILITIES[p.characterClass];
           const duration = ability ? ability.durationMs : 7000;
-          const pExt = p as any;
-          if (p.isInvulnerable) {
-            if (pExt.landingInvulnerableUntil) {
-              if (now > pExt.landingInvulnerableUntil) {
-                p.isInvulnerable = false;
-                pExt.landingInvulnerableUntil = undefined;
-              }
-            } else if (now - p.lastAbilityTime > duration) {
-              p.isInvulnerable = false;
-            }
-          }
+          if (p.isInvulnerable && now - p.lastAbilityTime > duration) p.isInvulnerable = false;
           if (p.hasShield && now - p.lastAbilityTime > duration) p.hasShield = false;
           if (p.isFlying && now - p.lastAbilityTime > duration) p.isFlying = false;
         });
@@ -2253,14 +2037,6 @@ async function startServer() {
                   shouldExplode = true;
                 }
               });
-            } else if (bomb.bombType === 'smoke') {
-              if (now - bomb.createdAt > 1800) {
-                shouldExplode = true;
-              }
-            } else if (bomb.bombType === 'stun') {
-              if (now - bomb.createdAt > 1600) {
-                shouldExplode = true;
-              }
             } else {
               // Normal Grenade: Explodes after 3s fuse
               if (now - bomb.createdAt > 3000) {
@@ -2270,132 +2046,58 @@ async function startServer() {
 
             if (shouldExplode) {
               bomb.exploded = true;
+              Object.values(room.players).forEach(p => {
+                if (p.isDead || p.isInvulnerable) return;
+                if (p.id === bomb.ownerId && bomb.isMine) return; // Prevent mine suicide. (Normal bombs also prevent suicide, handled below)
+                if (p.id === bomb.ownerId && !bomb.isMine) return; // Prevent suicide bomb from own ability
+                if (room.mode === 'team' && p.team === room.players[bomb.ownerId]?.team) return;
 
-              if (bomb.bombType === 'smoke') {
-                // Deploy Smoke Cloud (12 seconds)
-                if (!room.smokeClouds) room.smokeClouds = {};
-                const cloudId = 'cloud_' + Math.random().toString(36).substring(2);
-                room.smokeClouds[cloudId] = {
-                  id: cloudId,
-                  x: bomb.x,
-                  y: Math.max(1, bomb.y),
-                  z: bomb.z,
-                  radius: 12,
-                  createdAt: now,
-                  expiresAt: now + 12000,
-                };
-                io.to(roomId).emit('smokeCloudSpawned', room.smokeClouds[cloudId]);
-              } else if (bomb.bombType === 'stun') {
-                // Flashbang stun detonation
-                io.to(roomId).emit('stunExploded', { x: bomb.x, y: bomb.y, z: bomb.z, radius: 24 });
-                Object.values(room.players).forEach(p => {
-                  if (p.isDead || p.isInvulnerable || p.inBus || p.isSkydiving || p.isGliding) return;
-                  const dx = p.x - bomb.x;
-                  const dy = (p.y || 1) - bomb.y;
-                  const dz = p.z - bomb.z;
-                  const dist = Math.hypot(dx, dy, dz);
-                  if (dist < 24) {
-                    const intensity = Math.max(0.4, 1.0 - (dist / 24) * 0.6);
-                    const dur = Math.round(3500 * intensity);
-                    p.isBlindedUntil = now + dur;
-                    p.blindIntensity = intensity;
-                    io.to(p.id).emit('stunBlinded', { intensity, durationMs: dur });
-                  }
-                });
-              } else {
-                // Standard explosive damage logic
-                Object.values(room.players).forEach(p => {
-                  if (p.isDead || p.isInvulnerable) return;
-                  if (p.id === bomb.ownerId && bomb.isMine) return;
-                  if (p.id === bomb.ownerId && !bomb.isMine) return;
-                  if (room.mode === 'team' && p.team === room.players[bomb.ownerId]?.team) return;
+                const dx = p.x - bomb.x;
+                const dy = (p.y || 1) - bomb.y;
+                const dz = p.z - bomb.z;
+                const dist = Math.hypot(dx, dy, dz);
+                const explosionRadius = bomb.isMine ? 6.5 : BOMB_RADIUS;
 
-                  const dx = p.x - bomb.x;
-                  const dy = (p.y || 1) - bomb.y;
-                  const dz = p.z - bomb.z;
-                  const dist = Math.hypot(dx, dy, dz);
-                  const explosionRadius = bomb.isMine ? 6.5 : BOMB_RADIUS;
+                if (dist < explosionRadius) {
+                  const falloff = bomb.isMine ? 1.0 : Math.max(0.3, 1 - (dist / explosionRadius) * 0.4);
+                  const damageMult = p.hasShield ? 0.5 : 1;
+                  const baseDamage = bomb.isMine ? 100 : BOMB_DAMAGE;
+                  const dmg = Math.max(15, Math.round(baseDamage * falloff * damageMult));
+                  p.health -= dmg;
+                  io.to(p.id).emit('tookDamage', { attackerX: bomb.x, attackerZ: bomb.z });
+                  io.to(roomId).emit('damageDealt', {
+                    id: Math.random().toString(36).substring(2),
+                    targetId: p.id,
+                    attackerId: bomb.ownerId,
+                    x: p.x,
+                    y: p.y + 0.2,
+                    z: p.z,
+                    amount: dmg,
+                    isSword: false,
+                  });
 
-                  if (dist < explosionRadius) {
-                    const falloff = bomb.isMine ? 1.0 : Math.max(0.3, 1 - (dist / explosionRadius) * 0.4);
-                    const damageMult = p.hasShield ? 0.5 : 1;
-                    const baseDamage = bomb.isMine ? 100 : BOMB_DAMAGE;
-                    const dmg = Math.max(15, Math.round(baseDamage * falloff * damageMult));
-                    p.health -= dmg;
+                  if (p.health <= 0) {
+                    p.health = 0;
+                    p.isDead = true;
+                    const killer = room.players[bomb.ownerId];
+                    if (killer) killer.score += 1;
+                    io.to(roomId).emit('playerDied', { id: p.id, killer: bomb.ownerId });
 
-                    // Cancel stealth on damage
-                    if (p.isShadowStealth || (p.shadowStealthUntil && p.shadowStealthUntil > now)) {
-                      p.isShadowStealth = false;
-                      p.shadowStealthUntil = 0;
-                    }
-
-                    io.to(p.id).emit('tookDamage', { attackerX: bomb.x, attackerZ: bomb.z });
-                    io.to(roomId).emit('damageDealt', {
-                      id: Math.random().toString(36).substring(2),
-                      targetId: p.id,
-                      attackerId: bomb.ownerId,
-                      x: p.x,
-                      y: p.y + 0.2,
-                      z: p.z,
-                      amount: dmg,
-                      isSword: false,
-                    });
-
-                    if (p.health <= 0) {
-                      p.health = 0;
-                      p.isDead = true;
-                      const killer = room.players[bomb.ownerId];
-                      if (killer) killer.score += 1;
-                      io.to(roomId).emit('playerDied', { id: p.id, killer: bomb.ownerId });
-
-                      if (Math.random() < 0.25) {
-                        const dropTypes: ItemType[] = ['heal', 'weapon', 'speed', 'power', 'smoke', 'stun', 'shadow'];
-                        const pickedType = dropTypes[Math.floor(Math.random() * dropTypes.length)];
-                        const itemId = 'drop_' + Math.random().toString(36).substring(2);
-                        room.items[itemId] = {
-                          id: itemId,
-                          type: pickedType,
-                          x: p.x,
-                          y: 1,
-                          z: p.z,
-                        };
-                        markItemsDirty(roomId);
-                      }
-                    }
-                  }
-                });
-
-                // Damage and break destructible crates within explosive blast
-                for (const obsId in room.obstacles) {
-                  const obs = room.obstacles[obsId];
-                  if (obs.isDestructible) {
-                    const dObs = Math.hypot(obs.x - bomb.x, obs.z - bomb.z);
-                    if (dObs <= 6.5) {
-                      obs.hp = (obs.hp || 40) - 80;
-                      if (obs.hp <= 0) {
-                        delete room.obstacles[obsId];
-                        buildRoomSpatialData(roomId, room.obstacles);
-                        const lootPool: ItemType[] = ['speed', 'power', 'weapon', 'heal', 'smoke', 'stun', 'shadow'];
-                        const lootType = lootPool[Math.floor(Math.random() * lootPool.length)];
-                        const newItemId = 'crate_drop_' + Math.random().toString(36).substring(2);
-                        room.items[newItemId] = {
-                          id: newItemId,
-                          type: lootType,
-                          x: obs.x,
-                          y: 0.5,
-                          z: obs.z,
-                        };
-                        markItemsDirty(roomId);
-                        io.to(roomId).emit('obstacleDestroyed', { id: obsId, x: obs.x, y: obs.height / 2, z: obs.z });
-                        io.to(roomId).emit('stateUpdate', { obstacles: room.obstacles });
-                      } else {
-                        io.to(roomId).emit('stateUpdate', { obstacles: room.obstacles });
-                      }
+                    if (Math.random() < 0.05) {
+                      const itemId = 'drop_' + Math.random().toString(36).substring(2);
+                      room.items[itemId] = {
+                        id: itemId,
+                        type: Math.random() < 0.05 ? 'weapon' : 'heal',
+                        x: p.x,
+                        y: 1,
+                        z: p.z,
+                      };
+                      markItemsDirty(roomId);
                     }
                   }
                 }
-              }
-              setTimeout(() => { delete room.bombs[bombId]; }, 1000);
+              });
+              setTimeout(() => { delete room.bombs[bombId]; }, 1000); // Remove bomb after explosion effect
             }
           }
         }
