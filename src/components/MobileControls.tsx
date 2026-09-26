@@ -1542,48 +1542,55 @@ export function MobileControls({ onReturnToLobby }: { onReturnToLobby?: () => vo
             )}
           </div>
 
-          {/* Sub-Weapon / Item Use Button (Speed, Power, Shadow, Smoke, Stun) */}
-          {myPlayer?.subWeapon && (
-            <div className="relative animate-in fade-in zoom-in duration-200">
-              <button 
-                type="button"
-                className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full flex flex-col items-center justify-center text-white shadow-xl transition-all border-2 active:scale-95 cursor-pointer select-none ${
-                  myPlayer.subWeapon === 'speed'
-                    ? 'bg-gradient-to-br from-cyan-500 to-blue-600 border-cyan-300 shadow-[0_0_18px_rgba(6,182,212,0.8)]'
-                    : myPlayer.subWeapon === 'power'
-                    ? 'bg-gradient-to-br from-red-500 to-rose-700 border-red-300 shadow-[0_0_18px_rgba(239,68,68,0.8)]'
-                    : myPlayer.subWeapon === 'shadow'
-                    ? 'bg-gradient-to-br from-purple-600 to-indigo-800 border-purple-300 shadow-[0_0_18px_rgba(168,85,247,0.8)]'
-                    : myPlayer.subWeapon === 'smoke'
-                    ? 'bg-gradient-to-br from-slate-600 to-slate-800 border-slate-300 shadow-[0_0_18px_rgba(148,163,184,0.8)]'
-                    : 'bg-gradient-to-br from-yellow-500 to-amber-600 border-yellow-300 shadow-[0_0_18px_rgba(234,179,8,0.8)]'
-                }`}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  liveInput.useSubWeapon = true;
-                  setInput({ useSubWeapon: true });
-                  setTimeout(() => { liveInput.useSubWeapon = false; setInput({ useSubWeapon: false }); }, 150);
-                }}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  liveInput.useSubWeapon = true;
-                  setInput({ useSubWeapon: true });
-                  setTimeout(() => { liveInput.useSubWeapon = false; setInput({ useSubWeapon: false }); }, 150);
-                }}
-              >
-                <span className="text-base sm:text-lg drop-shadow">
-                  {myPlayer.subWeapon === 'speed' ? '⚡' : myPlayer.subWeapon === 'power' ? '💥' : myPlayer.subWeapon === 'shadow' ? '👤' : myPlayer.subWeapon === 'smoke' ? '💨' : '⚡'}
-                </span>
-                <span className="text-[7px] sm:text-[8px] font-black tracking-tighter uppercase">
-                  {myPlayer.subWeapon === 'speed' ? 'Speed' : myPlayer.subWeapon === 'power' ? 'Power' : myPlayer.subWeapon === 'shadow' ? 'Stealth' : myPlayer.subWeapon === 'smoke' ? 'Smoke' : 'Stun'}
-                </span>
-              </button>
-              <div className="absolute -top-1 -right-1 bg-amber-400 text-slate-950 text-[8px] font-black px-1 rounded-full border border-amber-200 shadow animate-bounce pointer-events-none">
-                ITEM [G]
+          {/* Sub-Weapon / Item Use Slot (Speed, Power, Shadow, Smoke, Stun) */}
+          <div className="relative">
+            {myPlayer?.subWeapon ? (
+              <div className="relative animate-in fade-in zoom-in duration-200">
+                <button 
+                  type="button"
+                  className={`w-11 h-11 sm:w-13 sm:h-13 rounded-full flex flex-col items-center justify-center text-white shadow-xl transition-all border-2 active:scale-95 cursor-pointer select-none ${
+                    myPlayer.subWeapon === 'speed'
+                      ? 'bg-gradient-to-br from-cyan-500 to-blue-600 border-cyan-300 shadow-[0_0_18px_rgba(6,182,212,0.8)]'
+                      : myPlayer.subWeapon === 'power'
+                      ? 'bg-gradient-to-br from-red-500 to-rose-700 border-red-300 shadow-[0_0_18px_rgba(239,68,68,0.8)]'
+                      : myPlayer.subWeapon === 'shadow'
+                      ? 'bg-gradient-to-br from-purple-600 to-indigo-800 border-purple-300 shadow-[0_0_18px_rgba(168,85,247,0.8)]'
+                      : myPlayer.subWeapon === 'smoke'
+                      ? 'bg-gradient-to-br from-slate-600 to-slate-800 border-slate-300 shadow-[0_0_18px_rgba(148,163,184,0.8)]'
+                      : 'bg-gradient-to-br from-yellow-500 to-amber-600 border-yellow-300 shadow-[0_0_18px_rgba(234,179,8,0.8)]'
+                  }`}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    liveInput.useSubWeapon = true;
+                    setInput({ useSubWeapon: true });
+                    setTimeout(() => { liveInput.useSubWeapon = false; setInput({ useSubWeapon: false }); }, 150);
+                  }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    liveInput.useSubWeapon = true;
+                    setInput({ useSubWeapon: true });
+                    setTimeout(() => { liveInput.useSubWeapon = false; setInput({ useSubWeapon: false }); }, 150);
+                  }}
+                >
+                  <span className="text-base sm:text-lg drop-shadow">
+                    {myPlayer.subWeapon === 'speed' ? '⚡' : myPlayer.subWeapon === 'power' ? '💥' : myPlayer.subWeapon === 'shadow' ? '👤' : myPlayer.subWeapon === 'smoke' ? '💨' : '⚡'}
+                  </span>
+                  <span className="text-[7px] sm:text-[8px] font-black tracking-tighter uppercase">
+                    {myPlayer.subWeapon === 'speed' ? 'Speed' : myPlayer.subWeapon === 'power' ? 'Power' : myPlayer.subWeapon === 'shadow' ? 'Stealth' : myPlayer.subWeapon === 'smoke' ? 'Smoke' : 'Stun'}
+                  </span>
+                </button>
+                <div className="absolute -top-1 -right-1 bg-amber-400 text-slate-950 text-[8px] font-black px-1 rounded-full border border-amber-200 shadow animate-bounce pointer-events-none">
+                  ITEM [G]
+                </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-full flex flex-col items-center justify-center bg-slate-900/60 border border-slate-700/60 text-slate-500 shadow-md pointer-events-none select-none" title="アイテムスロット (木箱を破壊して入手)">
+                <span className="text-xs sm:text-sm opacity-50">🎒</span>
+                <span className="text-[6px] sm:text-[7px] font-bold text-slate-400">ITEM</span>
+              </div>
+            )}
+          </div>
 
           {/* Aim Zoom Button (ADS) */}
           <div className="relative flex items-center justify-center">

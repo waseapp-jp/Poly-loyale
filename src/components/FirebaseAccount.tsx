@@ -311,14 +311,14 @@ export function FirebaseAccount({ onUserLoaded, externalProfile }: Props) {
     setIsGeneratingCard(true);
     try {
       const activePoints = profile.rankPoints || 0;
-      const activeRating = profile.rating && profile.rating >= 2000 ? profile.rating : null;
+      const activeRating = profile.rating ?? profile.rankPoints ?? 0;
       const tier = getRankTier(activePoints, activeRating);
       const dataUrl = await generatePhotoCard({
         displayName: profile.displayName || user?.displayName || 'Player',
         avatarUrl: profile.photoURL || user?.photoURL || undefined,
         tier,
-        ratingOrPoints: activeRating !== null ? Math.round(activeRating) : activePoints,
-        isGod: activeRating !== null,
+        ratingOrPoints: activePoints,
+        isGod: activePoints >= 2000,
         totalWins: profile.totalWins || 0,
         kills: profile.totalKills || 0,
       });

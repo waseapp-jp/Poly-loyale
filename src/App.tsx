@@ -270,6 +270,15 @@ export default function App() {
 
       if (auth.currentUser) {
         const activeMode = gameMode || mode;
+        // Optimistically update cloudProfile immediately so it doesn't flicker or revert!
+        setCloudProfile(prev => prev ? {
+          ...prev,
+          rankPoints: currentRankPoints,
+          rating: currentRankPoints,
+          totalWins: updated.wins,
+          totalMatches: (prev.totalMatches || 0) + 1,
+        } : null);
+
         updateUserStats(
           auth.currentUser.uid,
           false,
@@ -309,7 +318,7 @@ export default function App() {
       const isWin = winner === myId || (myPlayerTeam && winner === myPlayerTeam);
       const myScore = myPlayerScore || 0;
 
-      let currentRankPoints = cloudProfile?.rankPoints ?? cloudProfile?.rating ?? profile.rankPoints ?? profile.rating ?? 0;
+      let currentRankPoints = Math.max(cloudProfile?.rankPoints ?? 0, profile.rankPoints ?? 0);
 
       let newWins = (cloudProfile?.totalWins ?? profile.wins ?? 0) + (isWin ? 1 : 0);
       let newStreak = isWin ? ((profile.streak || 0) + 1) : 0;
@@ -343,6 +352,15 @@ export default function App() {
       setProfile(newProfile);
       localStorage.setItem('poly_profile', JSON.stringify(newProfile));
 
+      // Optimistically update cloudProfile immediately so UI never reverts!
+      setCloudProfile(prev => prev ? {
+        ...prev,
+        rankPoints: newRankPoints,
+        rating: newRankPoints,
+        totalWins: newWins,
+        totalMatches: (prev.totalMatches || 0) + 1,
+      } : null);
+
       // Sync stats to Firebase Firestore if logged in
       if (auth.currentUser) {
         const deaths = isWin ? 0 : 1;
@@ -364,23 +382,13 @@ export default function App() {
         ).then((updatedDoc) => {
           if (updatedDoc) {
             setCloudProfile(updatedDoc);
-          } else {
-            setCloudProfile(prev => prev ? {
-              ...prev,
-              totalWins: newWins,
-              totalKills: prev.totalKills + myScore,
-              totalMatches: prev.totalMatches + 1,
-              rankPoints: newRankPoints,
-              rating: newRankPoints,
-            } : null);
           }
         }).catch((err) => console.error('Error syncing match to Firebase:', err));
       }
     }
   }, [status, roomId, winner, gameMode]);
 
-  const getRankName = (points: number, rating: number | null) => {
-    if (rating !== null) return `God`;
+  const getRankName = (points: number) => {
     if (points < 150) return 'Beginner';
     if (points < 300) return 'Bronze';
     if (points < 500) return 'Silver';
@@ -392,11 +400,11 @@ export default function App() {
     return `God`;
   };
 
-  const activePoints = cloudProfile?.rankPoints ?? profile.rankPoints;
-  const activeRating = cloudProfile?.rating ?? profile.rating;
+  const activePoints = Math.max(cloudProfile?.rankPoints ?? 0, profile.rankPoints ?? 0);
+  const activeRating = Math.max(cloudProfile?.rating ?? 0, profile.rating ?? 0);
   const currentTier = getRankTier(activePoints, activeRating);
   const tierConfig = RANK_CONFIGS[currentTier];
-  const displayRate = activeRating !== null ? activeRating.toFixed(1) : activePoints;
+  const displayRate = activePoints;
 
   const handleJoin = () => {
     const resolvedName = cloudProfile?.displayName || (profile as any)?.displayName || '';
