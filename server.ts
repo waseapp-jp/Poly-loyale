@@ -1553,18 +1553,6 @@ async function startServer() {
                 target.isDead = true;
                 player.score += 1;
                 io.to(roomId).emit('playerDied', { id: targetId, killer: socket.id });
-
-                if (Math.random() < 0.20) {
-                  const itemId = 'drop_' + Math.random().toString(36).substring(2);
-                  room.items[itemId] = {
-                    id: itemId,
-                    type: Math.random() < 0.08 ? 'weapon' : 'heal',
-                    x: target.x,
-                    y: 1,
-                    z: target.z,
-                  };
-                  markItemsDirty(roomId);
-                }
               }
             }
           }
@@ -1804,17 +1792,6 @@ async function startServer() {
             room.items = {};
             room.bombs = {};
             room.winner = null;
-
-            for (let i = 0; i < 80; i++) {
-              const id = Math.random().toString(36).substring(2);
-              room.items[id] = {
-                id,
-                type: Math.random() < 0.03 ? 'weapon' : 'heal',
-                x: (Math.random() - 0.5) * MAP_SIZE,
-                y: 1,
-                z: (Math.random() - 0.5) * MAP_SIZE,
-              };
-            }
             markItemsDirty(roomId);
 
             // Initialize Battle Bus flight trajectory cutting across the map
@@ -2049,18 +2026,6 @@ async function startServer() {
                     const killer = room.players[bomb.ownerId];
                     if (killer) killer.score += 1;
                     io.to(roomId).emit('playerDied', { id: p.id, killer: bomb.ownerId });
-
-                    if (Math.random() < 0.20) {
-                      const itemId = 'drop_' + Math.random().toString(36).substring(2);
-                      room.items[itemId] = {
-                        id: itemId,
-                        type: Math.random() < 0.08 ? 'weapon' : 'heal',
-                        x: p.x,
-                        y: 1,
-                        z: p.z,
-                      };
-                      markItemsDirty(roomId);
-                    }
                   }
                 }
               });
@@ -2607,18 +2572,6 @@ async function startServer() {
                       targetPlayer.isDead = true;
                       bot.score += 1;
                       io.to(roomId).emit('playerDied', { id: targetPlayer.id, killer: bot.id });
-
-                      if (Math.random() < 0.20) {
-                        const itemId = 'drop_' + Math.random().toString(36).substring(2);
-                        room.items[itemId] = {
-                          id: itemId,
-                          type: Math.random() < 0.08 ? 'weapon' : 'heal',
-                          x: targetPlayer.x,
-                          y: 1,
-                          z: targetPlayer.z,
-                        };
-                        markItemsDirty(roomId);
-                      }
                     }
                   }
                 }
