@@ -9,14 +9,36 @@ import {
   logoutUser,
   loadOrCreateUserProfile,
   fetchTopLeaderboard,
+  updateUserPhotoURL,
   UserProfileData,
   LeaderboardEntryData,
 } from '../firebase';
-import { Trophy, LogIn, LogOut, Shield, Award, UserCheck, X, Activity, BarChart2, History, Sparkles, RotateCcw, Settings, Mail, MessageSquare, ExternalLink, Share2 } from 'lucide-react';
+import {
+  Trophy,
+  LogIn,
+  LogOut,
+  Shield,
+  UserCheck,
+  X,
+  Activity,
+  BarChart2,
+  History,
+  Sparkles,
+  RotateCcw,
+  Settings,
+  MessageSquare,
+  ExternalLink,
+  Camera,
+  Download,
+  Share2,
+  Check,
+} from 'lucide-react';
 import { fetchUserHistory, MatchHistoryData } from '../firebase';
 import { MatchHistory } from './MatchHistory';
 import { getRankTier, RANK_CONFIGS, ALL_RANKS, RankTier } from '../utils/rankUtils';
 import { RankAuraEffect, RankTierPill } from './RankAuraEffect';
+import { PhotoAvatarModal } from './PhotoAvatarModal';
+import { generatePhotoCard, downloadPhotoCard } from '../utils/photoCardGenerator';
 
 function RatingHistoryChart({ history }: { history: MatchHistoryData[] }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
@@ -178,9 +200,12 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
   const [previewTier, setPreviewTier] = useState<RankTier | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [isGeneratingCard, setIsGeneratingCard] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
 
   const userRankTier = getRankTier(profile?.rankPoints ?? 0, profile?.rating ?? null);
   const currentRankConfig = RANK_CONFIGS[userRankTier];
@@ -273,6 +298,54 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
     }
   };
 
+  const handleExportPhotoCard = async () => {
+    if (!profile) return;
+    setIsGeneratingCard(true);
+    try {
+      const activePoints = profile.rankPoints || 0;
+      const activeRating = profile.rating && profile.rating >= 2000 ? profile.rating : null;
+      const tier = getRankTier(activePoints, activeRating);
+      const dataUrl = await generatePhotoCard({
+        displayName: profile.displayName || user?.displayName || 'Player',
+        avatarUrl: profile.photoURL || user?.photoURL || undefined,
+        tier,
+        ratingOrPoints: activeRating !== null ? Math.round(activeRating) : activePoints,
+        isGod: activeRating !== null,
+        totalWins: profile.totalWins || 0,
+        kills: profile.totalKills || 0,
+      });
+      if (dataUrl) {
+        downloadPhotoCard(dataUrl, `poly_battle_card_${profile.displayName || 'player'}.png`);
+      }
+    } catch (err) {
+      console.error('Failed to generate photo card:', err);
+    } finally {
+      setIsGeneratingCard(false);
+    }
+  };
+
+  const handlePhotoSaved = (newUrl: string) => {
+    setProfile(prev => prev ? { ...prev, photoURL: newUrl } : null);
+    onUserLoaded?.(profile ? { ...profile, photoURL: newUrl } : null);
+  };
+
+  const handleUpdateDisplayName = async () => {
+    if (!user || !newDisplayName.trim()) return;
+    setIsLoading(true);
+    try {
+      await updateUserPhotoURL(user.uid, profile?.photoURL || user.photoURL || '', newDisplayName.trim());
+      setProfile(prev => prev ? { ...prev, displayName: newDisplayName.trim() } : null);
+      setNewDisplayName("");
+      setAuthError("");
+    } catch (err: any) {
+      setAuthError("名前の更新に失敗しました: " + (err.message || String(err)));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const activePhoto = profile?.photoURL || user?.photoURL;
+
   return (
     <div className="w-full max-w-xl mx-auto mb-6 px-4">
       {/* Top Banner Bar */}
@@ -280,28 +353,39 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
         <div className="bg-slate-800/90 backdrop-blur-md p-3.5 flex flex-wrap items-center justify-between gap-3">
           {user ? (
             <div className="flex items-center gap-3">
-              {user.photoURL ? (
-                <img
-                  src={user.photoURL}
-                  alt={user.displayName || 'Player'}
-                  className="w-10 h-10 rounded-full object-cover shrink-0 transition-transform hover:scale-105"
-                  style={{
-                    border: `2px solid ${currentRankConfig.primaryColor}`,
-                    boxShadow: `0 0 10px ${currentRankConfig.primaryColor}88`,
-                  }}
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div
-                  className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-white shrink-0"
-                  style={{
-                    border: `2px solid ${currentRankConfig.primaryColor}`,
-                    boxShadow: `0 0 10px ${currentRankConfig.primaryColor}88`,
-                  }}
-                >
-                  {(user.displayName || 'P')[0].toUpperCase()}
+              <button
+                type="button"
+                onClick={() => setShowPhotoModal(true)}
+                className="relative group cursor-pointer focus:outline-none"
+                title="📸 写真・アバターを変更する"
+              >
+                {activePhoto ? (
+                  <img
+                    src={activePhoto}
+                    alt={user.displayName || 'Player'}
+                    className="w-11 h-11 rounded-full object-cover shrink-0 transition-transform group-hover:scale-105"
+                    style={{
+                      border: `2px solid ${currentRankConfig.primaryColor}`,
+                      boxShadow: `0 0 10px ${currentRankConfig.primaryColor}88`,
+                    }}
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div
+                    className="w-11 h-11 rounded-full bg-slate-800 flex items-center justify-center font-bold text-white shrink-0 group-hover:scale-105 transition-transform"
+                    style={{
+                      border: `2px solid ${currentRankConfig.primaryColor}`,
+                      boxShadow: `0 0 10px ${currentRankConfig.primaryColor}88`,
+                    }}
+                  >
+                    {(user.displayName || 'P')[0].toUpperCase()}
+                  </div>
+                )}
+                <div className="absolute -bottom-1 -right-1 bg-purple-600 group-hover:bg-purple-500 text-white p-1 rounded-full border border-slate-900 shadow-md">
+                  <Camera size={10} />
                 </div>
-              )}
+              </button>
+
               <div className="text-left">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="font-bold text-white text-sm">
@@ -354,7 +438,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
             {user && (
               <button
                 onClick={openProfile}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition-all active:scale-95"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition-all active:scale-95 cursor-pointer"
               >
                 <BarChart2 size={14} />
                 Profile
@@ -362,7 +446,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
             )}
             <button
               onClick={openLeaderboard}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all active:scale-95 cursor-pointer"
             >
               <Trophy size={14} />
               Leaderboard
@@ -370,24 +454,28 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
 
             {user ? (
               <div className="flex gap-2">
-                <button onClick={() => setShowSettings(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-slate-600/50 text-xs font-bold transition-all active:scale-95" title="Settings">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-slate-600/50 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                  title="Settings"
+                >
                   <Settings size={14} />
                   Settings
                 </button>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 text-xs font-bold transition-all active:scale-95"
-                title="Sign Out"
-              >
-                <LogOut size={14} />
-                Logout
-              </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                  title="Sign Out"
+                >
+                  <LogOut size={14} />
+                  Logout
+                </button>
               </div>
             ) : (
               <button
                 onClick={() => setShowAuthModal(true)}
                 disabled={isLoading}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 <LogIn size={14} />
                 {isLoading ? 'Loading...' : 'Sign In / Register'}
@@ -397,11 +485,10 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
         </div>
       </RankAuraEffect>
 
-
       {/* Profile & Detailed Statistics Modal */}
       {showProfile && user && profile && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl p-6 shadow-2xl relative text-left max-h-[90vh] flex flex-col">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-2xl p-6 shadow-2xl relative text-left max-h-[90vh] flex flex-col allow-scroll">
             <button
               onClick={() => setShowProfile(false)}
               className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
@@ -445,32 +532,43 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
               </div>
             </div>
 
-            {/* Profile Hero Card with Rank Aura & Particle Effects */}
-            <RankAuraEffect tier={activeModalTier} showBadge className="mb-6">
+            {/* Profile Hero Card with Rank Aura */}
+            <RankAuraEffect tier={activeModalTier} showBadge className="mb-4">
               <div className="bg-slate-800/95 backdrop-blur-md p-4 flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
-                  {user.photoURL ? (
-                    <img
-                      src={user.photoURL}
-                      alt="Profile"
-                      className="w-16 h-16 rounded-full object-cover shrink-0 transition-transform hover:scale-105"
-                      style={{
-                        border: `3px solid ${activeModalConfig.primaryColor}`,
-                        boxShadow: `0 0 16px ${activeModalConfig.primaryColor}aa`,
-                      }}
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div
-                      className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center font-bold text-white text-2xl shrink-0"
-                      style={{
-                        border: `3px solid ${activeModalConfig.primaryColor}`,
-                        boxShadow: `0 0 16px ${activeModalConfig.primaryColor}aa`,
-                      }}
-                    >
-                      {profile.displayName[0].toUpperCase()}
+                  <button
+                    type="button"
+                    onClick={() => setShowPhotoModal(true)}
+                    className="relative group cursor-pointer focus:outline-none"
+                    title="📸 写真・アバターを変更する"
+                  >
+                    {activePhoto ? (
+                      <img
+                        src={activePhoto}
+                        alt="Profile"
+                        className="w-16 h-16 rounded-full object-cover shrink-0 transition-transform group-hover:scale-105"
+                        style={{
+                          border: `3px solid ${activeModalConfig.primaryColor}`,
+                          boxShadow: `0 0 16px ${activeModalConfig.primaryColor}aa`,
+                        }}
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div
+                        className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center font-bold text-white text-2xl shrink-0 group-hover:scale-105 transition-transform"
+                        style={{
+                          border: `3px solid ${activeModalConfig.primaryColor}`,
+                          boxShadow: `0 0 16px ${activeModalConfig.primaryColor}aa`,
+                        }}
+                      >
+                        {(profile.displayName || 'P')[0].toUpperCase()}
+                      </div>
+                    )}
+                    <div className="absolute -bottom-1 -right-1 bg-purple-600 group-hover:bg-purple-500 text-white p-1 rounded-full border border-slate-900 shadow">
+                      <Camera size={12} />
                     </div>
-                  )}
+                  </button>
+
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-2xl font-black text-white">{profile.displayName}</h3>
@@ -496,23 +594,31 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                   </div>
                 </div>
 
-                <div className="text-right ml-auto">
-                  <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Aura Power</div>
-                  <div
-                    className="text-xs font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border mt-0.5 inline-block"
-                    style={{
-                      color: activeModalConfig.primaryColor,
-                      borderColor: `${activeModalConfig.primaryColor}55`,
-                      backgroundColor: `${activeModalConfig.primaryColor}15`,
-                    }}
+                {/* Photo Snapshot Action Button */}
+                <div className="flex flex-col items-end gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={handleExportPhotoCard}
+                    disabled={isGeneratingCard}
+                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black text-xs shadow-lg flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                    title="高画質PNGの戦績カード写真を生成して端末に保存"
                   >
-                    {activeModalConfig.auraIntensity}
-                  </div>
+                    <Camera size={14} />
+                    <span>{isGeneratingCard ? 'カード写真生成中...' : '📸 戦績写真を保存'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPhotoModal(true)}
+                    className="text-[11px] text-purple-300 hover:text-white flex items-center gap-1 underline decoration-purple-400/50"
+                  >
+                    <span>アバター写真を変更</span>
+                  </button>
                 </div>
               </div>
             </RankAuraEffect>
 
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="bg-slate-800 rounded-xl p-3 border border-slate-700 text-center">
                 <div className="text-xs text-slate-400 font-bold mb-1">Win Rate</div>
                 <div className="text-lg font-black text-white">
@@ -534,7 +640,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
             </div>
 
             {/* Tabs: Match History / Rating Graph */}
-            <div id="profile-subtabs" className="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+            <div id="profile-subtabs" className="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-2.5">
               <div className="flex items-center gap-2">
                 <button
                   id="tab-btn-match-history"
@@ -571,17 +677,17 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
               </div>
 
               <div className="text-[11px] text-slate-500 font-semibold hidden sm:block">
-                Firestore Data
+                Firestore Cloud Data
               </div>
             </div>
 
             {/* Tab content */}
             {profileTab === 'history' ? (
-              <div id="profile-history-view" className="flex-1 min-h-0 flex flex-col">
+              <div id="profile-history-view" className="flex-1 min-h-0 flex flex-col overflow-y-auto allow-scroll">
                 <MatchHistory history={history} isLoading={isLoadingProfile} />
               </div>
             ) : (
-              <div id="profile-chart-view" className="flex-1 min-h-0 flex flex-col">
+              <div id="profile-chart-view" className="flex-1 min-h-0 flex flex-col overflow-y-auto allow-scroll">
                 <div className="text-xs text-slate-400 mb-2">直近のマッチによるレーティング推移</div>
                 {isLoadingProfile ? (
                   <div className="py-12 text-center text-slate-400 font-bold animate-pulse">Loading history...</div>
@@ -595,7 +701,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
               </div>
             )}
             
-            <div className="mt-4 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+            <div className="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-slate-400 bg-slate-900 px-2 py-1 rounded border border-slate-700">
                   ID: {profile.userId || user.uid}
@@ -604,16 +710,6 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                   href={`https://everychat-Waseda.web.app/?text=${encodeURIComponent(profile.userId || user.uid)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => {
-                    const uid = profile.userId || user.uid;
-                    if (uid) {
-                      try {
-                        navigator.clipboard.writeText(uid);
-                      } catch (e) {
-                        console.error(e);
-                      }
-                    }
-                  }}
                   className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold flex items-center gap-1 transition-all active:scale-95 shadow-md"
                   title="ユーザーIDをコピーして everychat-Waseda.web.app/?text= を開く"
                 >
@@ -631,7 +727,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
       {/* Global Leaderboard Modal */}
       {showLeaderboard && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 shadow-2xl relative text-left">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-md p-6 shadow-2xl relative text-left max-h-[85vh] flex flex-col">
             <button
               onClick={() => setShowLeaderboard(false)}
               className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
@@ -639,7 +735,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
               <X size={20} />
             </button>
 
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mb-4 shrink-0">
               <div className="p-2 bg-yellow-500/20 text-yellow-400 rounded-xl border border-yellow-500/30">
                 <Trophy size={22} />
               </div>
@@ -658,7 +754,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                 まだランキングデータがありません。ランクマッチで勝利して1位を目指そう！
               </div>
             ) : (
-              <div className="space-y-2 max-h-80 overflow-y-auto pr-1 allow-scroll">
+              <div className="space-y-2 overflow-y-auto pr-1 allow-scroll flex-1">
                 {leaderboard.map((entry, idx) => {
                   const entryRating = typeof entry.rating === 'number' && Number.isFinite(entry.rating) ? Math.round(entry.rating) : 0;
                   const tier = getRankTier(entryRating);
@@ -667,7 +763,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                   return (
                     <div
                       key={entry.userId}
-                      className={`flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl border ${
+                      className={`flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl border ${
                         idx === 0
                           ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-300'
                           : idx === 1
@@ -681,8 +777,23 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                         <span className="font-black text-sm w-6 text-center shrink-0">
                           {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
                         </span>
+
+                        {/* Player Avatar */}
+                        {entry.photoURL ? (
+                          <img
+                            src={entry.photoURL}
+                            alt={entry.displayName}
+                            className="w-8 h-8 rounded-full object-cover shrink-0 border border-white/20 shadow-sm"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 shrink-0 border border-white/10">
+                            {entry.displayName[0]?.toUpperCase() || 'P'}
+                          </div>
+                        )}
+
                         <div>
-                          <div className="font-bold text-sm truncate max-w-[140px] sm:max-w-[180px] text-white">
+                          <div className="font-bold text-sm truncate max-w-[130px] sm:max-w-[170px] text-white">
                             {entry.displayName}
                           </div>
                           <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
@@ -693,7 +804,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/80 border border-slate-700 shrink-0">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-900/80 border border-slate-700 shrink-0">
                         <span className="text-sm">{config.badgeEmoji}</span>
                         <span className="text-xs font-black text-amber-300">{entryRating} RP</span>
                         <span className="text-[10px] font-bold px-1.5 py-0.2 rounded" style={{ backgroundColor: `${config.primaryColor}25`, color: config.primaryColor }}>
@@ -709,9 +820,10 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
         </div>
       )}
 
+      {/* Auth Modal */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700/50 p-6 rounded-2xl w-full max-w-sm relative">
+          <div className="bg-slate-900 border border-slate-700/50 p-6 rounded-3xl w-full max-w-sm relative">
             <button
               onClick={() => setShowAuthModal(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 p-1.5 rounded-full"
@@ -743,14 +855,14 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
                 <button 
                   onClick={() => handleEmailAuth(false)}
                   disabled={isLoading || !email || !password}
-                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50 cursor-pointer"
                 >
                   Sign In
                 </button>
                 <button 
                   onClick={() => handleEmailAuth(true)}
                   disabled={isLoading || !email || !password}
-                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50 cursor-pointer"
                 >
                   Register
                 </button>
@@ -765,7 +877,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
               <button 
                 onClick={handleLogin}
                 disabled={isLoading}
-                className="w-full flex items-center justify-center gap-2 bg-white hover:bg-gray-100 text-slate-900 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 bg-white hover:bg-gray-100 text-slate-900 py-2 rounded-xl text-sm font-bold transition-all disabled:opacity-50 cursor-pointer"
               >
                 <LogIn size={16} />
                 Continue with Google
@@ -775,9 +887,10 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
         </div>
       )}
 
+      {/* Settings Modal */}
       {showSettings && user && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700/50 p-6 rounded-2xl w-full max-w-sm relative">
+          <div className="bg-slate-900 border border-slate-700/50 p-6 rounded-3xl w-full max-w-sm relative allow-scroll max-h-[85vh] overflow-y-auto">
             <button
               onClick={() => setShowSettings(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 p-1.5 rounded-full"
@@ -791,12 +904,69 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
             {authError && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded mb-4">{authError}</div>}
             
             <div className="space-y-4">
-              <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+              {/* Photo & Avatar Customization */}
+              <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-3">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Camera size={16} className="text-purple-400" />
+                  <span>写真・アバター設定</span>
+                </h3>
+                <div className="flex items-center gap-3">
+                  {activePhoto ? (
+                    <img
+                      src={activePhoto}
+                      alt="Avatar"
+                      className="w-12 h-12 rounded-full object-cover border-2 border-purple-400"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white text-lg">
+                      {(user.displayName || 'P')[0].toUpperCase()}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSettings(false);
+                      setShowPhotoModal(true);
+                    }}
+                    className="flex-1 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Camera size={14} />
+                    <span>写真を変更 / アップロード</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Display Name Edit */}
+              <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-2">
+                <h3 className="text-sm font-bold text-white">表示名の変更</h3>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder={profile?.displayName || user.displayName || 'Player'}
+                    value={newDisplayName}
+                    onChange={(e) => setNewDisplayName(e.target.value)}
+                    maxLength={16}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleUpdateDisplayName}
+                    disabled={!newDisplayName.trim() || isLoading}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    変更
+                  </button>
+                </div>
+              </div>
+
+              {/* Account Info */}
+              <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-2">
                 <h3 className="text-sm font-bold text-white mb-1">Account Info</h3>
-                <p className="text-xs text-slate-400 mb-4">{user.email}</p>
+                <p className="text-xs text-slate-400 mb-3">{user.email || 'Email user'}</p>
                 <button 
                   onClick={handleLinkGoogle}
-                  className="w-full flex items-center justify-center gap-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/40 py-2 rounded-lg text-sm font-bold transition-all"
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/40 py-2 rounded-xl text-sm font-bold transition-all cursor-pointer"
                 >
                   <LogIn size={14} />
                   Link Google Account
@@ -806,6 +976,16 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
           </div>
         </div>
       )}
+
+      {/* Photo and Avatar Selection Modal */}
+      <PhotoAvatarModal
+        isOpen={showPhotoModal}
+        onClose={() => setShowPhotoModal(false)}
+        currentPhotoURL={activePhoto}
+        userRankTier={userRankTier}
+        userId={user?.uid}
+        onPhotoSaved={handlePhotoSaved}
+      />
     </div>
   );
 }

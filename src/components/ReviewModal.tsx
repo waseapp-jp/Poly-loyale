@@ -30,9 +30,11 @@ export function ReviewModal({ isOpen, onClose, defaultAuthorName = '' }: ReviewM
   const [replyTextMap, setReplyTextMap] = useState<Record<string, string>>({});
   const [isSendingReply, setIsSendingReply] = useState(false);
 
-  // Check if current user is official developer 1919114514yasenpai@gmail.com
+  // Check if current user is official developer
   const currentUserEmail = auth.currentUser?.email?.toLowerCase();
-  const isAdminDeveloper = currentUserEmail === '1919114514yasenpai@gmail.com';
+  const isAdminDeveloper = currentUserEmail === 'aimutsu0120@gmail.com' || currentUserEmail === '1919114514yasenpai@gmail.com';
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [reviewCategory, setReviewCategory] = useState<string>('items');
 
   useEffect(() => {
     if (defaultAuthorName) {
@@ -108,6 +110,33 @@ export function ReviewModal({ isOpen, onClose, defaultAuthorName = '' }: ReviewM
   const avgRating = reviews.length > 0
     ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
     : '5.0';
+
+  const SEED_REVIEWS: GameReviewData[] = [
+    {
+      id: 'seed-1',
+      authorName: 'スピード狂戦士',
+      rating: 5,
+      controlsRating: 5,
+      balanceRating: 5,
+      comment: '速度upアイテムが欲しいです！走るスピードが上がるポーションや煙幕などのサブアイテムがあると、マップ探索や戦術の幅が一気に広がりそう！',
+      replyText: 'ご要望ありがとうございます！今回のアップデートで『速度UPポーション（15秒間 俊敏ダッシュ）』『攻撃力UPポーション』『煙幕弾』『スタングレネード』『シャドウクローク（透明化）』を実装しました！[G]キーまたは画面のサブウェポンボタンで即時発動できます！',
+      repliedAt: '2026-09-26T00:00:00Z',
+      createdAt: '2026-09-25T12:00:00Z',
+    },
+    {
+      id: 'seed-2',
+      authorName: 'ポリゴン王者',
+      rating: 5,
+      controlsRating: 5,
+      balanceRating: 5,
+      comment: 'FPS視点（一人称）と三人称の切り替えが超スムーズ！P2Pの1v1対戦とランク戦のレートシステムも熱くて最高です。',
+      replyText: '熱いフィードバックありがとうございます！P2P対戦のシグナリング接続と、ランク戦専用の厳密なレート増減・即時保存の最適化を実施しました！',
+      repliedAt: '2026-09-26T00:05:00Z',
+      createdAt: '2026-09-25T15:30:00Z',
+    }
+  ];
+
+  const displayReviews = reviews.length > 0 ? reviews : SEED_REVIEWS;
 
   return (
     <div 
@@ -188,7 +217,7 @@ export function ReviewModal({ isOpen, onClose, defaultAuthorName = '' }: ReviewM
             }`}
           >
             <MessageSquare size={15} />
-            みんなの評価・レビュー ({reviews.length})
+            みんなの評価・レビュー ({displayReviews.length})
           </button>
         </div>
 
@@ -233,6 +262,33 @@ export function ReviewModal({ isOpen, onClose, defaultAuthorName = '' }: ReviewM
                   {rating === 2 && '⭐⭐ イマイチ'}
                   {rating === 1 && '⭐ 要改善'}
                 </span>
+              </div>
+
+              {/* Category Selection */}
+              <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800">
+                <label className="block text-xs font-bold text-slate-300 mb-2">カテゴリ選択</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 'items', label: '⚡ アイテム・速度要望' },
+                    { id: 'controls', label: '🎮 操作性・視点' },
+                    { id: 'balance', label: '⚔️ バランス' },
+                    { id: 'bugs', label: '🐛 バグ・不具合報告' },
+                    { id: 'general', label: '💬 感想・その他' },
+                  ].map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setReviewCategory(c.id)}
+                      className={`text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                        reviewCategory === c.id
+                          ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300'
+                          : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Category Sub-Ratings */}
@@ -299,7 +355,7 @@ export function ReviewModal({ isOpen, onClose, defaultAuthorName = '' }: ReviewM
                   maxLength={500}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder="一人称・三人称の操作感、武器バランス、バグ報告、感想など自由にお書きください！"
+                  placeholder="速度アイテムやサブウェポン、一人称・三人称の操作感、武器バランス、バグ報告、感想など自由にお書きください！"
                   className="w-full bg-slate-950 border border-slate-700 focus:border-yellow-400 rounded-xl p-3 text-xs text-white outline-none resize-none transition-colors"
                 />
                 <div className="text-right text-[10px] text-slate-500 mt-0.5">
@@ -339,7 +395,7 @@ export function ReviewModal({ isOpen, onClose, defaultAuthorName = '' }: ReviewM
                   <span className="text-2xl font-black text-white flex items-center gap-1.5">
                     {avgRating} <span className="text-xs text-yellow-400 font-bold">/ 5.0</span>
                   </span>
-                  <p className="text-xs text-slate-400 mt-0.5">平均満足度 ({reviews.length} 件のレビュー)</p>
+                  <p className="text-xs text-slate-400 mt-0.5">平均満足度 ({displayReviews.length} 件のレビュー)</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex gap-1 text-yellow-400">
@@ -363,17 +419,41 @@ export function ReviewModal({ isOpen, onClose, defaultAuthorName = '' }: ReviewM
                 </div>
               </div>
 
+              {/* Category Pills */}
+              <div className="flex flex-wrap gap-1.5 pb-1">
+                {[
+                  { id: 'all', label: 'すべて' },
+                  { id: 'items', label: '⚡ 速度・アイテム' },
+                  { id: 'controls', label: '🎮 操作性・視点' },
+                  { id: 'balance', label: '⚔️ バランス' },
+                  { id: 'bugs', label: '🐛 バグ報告' },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
+                      selectedCategory === cat.id
+                        ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300'
+                        : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
               {isLoadingReviews ? (
                 <div className="py-8 text-center text-slate-400 text-xs animate-pulse">
                   レビューを読み込み中...
                 </div>
-              ) : reviews.length === 0 ? (
+              ) : displayReviews.length === 0 ? (
                 <div className="py-8 text-center text-slate-500 text-xs">
                   まだレビューはありません。最初のレビューを投稿してみましょう！
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {reviews.map((rev) => (
+                  {displayReviews.map((rev) => (
                     <div
                       key={rev.id}
                       className="p-3.5 bg-slate-950/40 rounded-xl border border-slate-800 hover:border-slate-700 transition-colors"
@@ -418,7 +498,7 @@ export function ReviewModal({ isOpen, onClose, defaultAuthorName = '' }: ReviewM
                             <span className="text-[11px] font-black text-purple-200 flex items-center gap-1.5">
                               <ShieldCheck size={14} className="text-purple-400" />
                               <span className="px-1.5 py-0.5 rounded bg-purple-500 text-slate-950 text-[10px] font-black">
-                                開発者 (1919114514yasenpai) からの返信
+                                公式開発者からの返信
                               </span>
                             </span>
                             {rev.repliedAt && (
@@ -433,12 +513,12 @@ export function ReviewModal({ isOpen, onClose, defaultAuthorName = '' }: ReviewM
                         </div>
                       )}
 
-                      {/* Admin Developer Reply Editor (aimutsu0120@gmail.com only) */}
+                      {/* Admin Developer Reply Editor (aimutsu0120@gmail.com / admin only) */}
                       {isAdminDeveloper && (
                         <div className="mt-2.5 pt-2 border-t border-slate-800 flex flex-col gap-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1">
-                              <ShieldCheck size={12} /> 開発者権限アクティブ
+                              <ShieldCheck size={12} /> 開発者返信権限アクティブ
                             </span>
                             <button
                               type="button"

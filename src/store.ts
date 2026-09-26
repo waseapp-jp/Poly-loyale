@@ -55,6 +55,7 @@ export interface LiveInput {
   isHealing: boolean;
   useAbility: boolean;
   useAbility2?: boolean;
+  useSubWeapon?: boolean;
   isRolling: boolean;
   isZoomed: boolean;
   jumpFromBus?: boolean;
@@ -74,6 +75,7 @@ export const liveInput: LiveInput = {
   isShooting: false,
   isHealing: false,
   useAbility: false,
+  useSubWeapon: false,
   isRolling: false,
   isZoomed: false,
   jumpFromBus: false,
@@ -107,6 +109,11 @@ interface StoreState {
   localLastAbilityTime: number;
   localLastAbility2Time: number;
   localLastHealTime: number;
+  localLastSubWeaponTime: number;
+
+  // Stun flashbang whiteout overlay state
+  isBlinded: boolean;
+  blindIntensity: number;
 
   // P2P & Social fields
   p2pState: P2PState;
@@ -141,6 +148,7 @@ interface StoreState {
     p2pRoomId?: string
   ) => void;
   setInput: (input: Partial<ClientInput>) => void;
+  triggerSubWeapon: () => void;
   sendInput: () => void;
   respawn: () => void;
   leaveGame: () => void;
@@ -325,7 +333,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
       // Start WebRTC connection as Host
       p2pManager.initAsHost(
         (signal) => {
-          socket.emit('p2p_signal', { signal });
+          socket.emit('p2p_signal', { roomId: p2pRoomId, signal });
         },
         (p2pData) => {
           // Handle direct WebRTC incoming inputs/messages
@@ -351,6 +359,13 @@ export const useGameStore = create<StoreState>((set, get) => ({
       if (!success && reason) {
         set({ p2pNotice: `⚠️ 招待の送信に失敗: ${reason}` });
       }
+    });
+
+    socket.on('stunBlinded', ({ intensity, durationMs }: { intensity: number; durationMs: number }) => {
+      set({ isBlinded: true, blindIntensity: intensity || 1.0 });
+      setTimeout(() => {
+        set({ isBlinded: false, blindIntensity: 0 });
+      }, durationMs || 3500);
     });
 
     socket.on('init', ({ id, state }: { id: string, state: GameState }) => {
@@ -432,6 +447,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
               inBus: !!inc.inBus,
               isSkydiving: !!inc.isSkydiving,
               isGliding: !!inc.isGliding,
+              isShadowStealth: !!inc.isShadowStealth,
             };
           }
         }
@@ -459,6 +475,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
             players: mergedPlayers,
             items: state.items !== undefined ? state.items : prev.gameState.items,
             bombs: state.bombs !== undefined ? state.bombs : prev.gameState.bombs,
+            smokeClouds: state.smokeClouds !== undefined ? state.smokeClouds : prev.gameState.smokeClouds,
             obstacles: state.obstacles || prev.gameState.obstacles,
           }
         };
@@ -549,6 +566,11 @@ export const useGameStore = create<StoreState>((set, get) => ({
       set({ spectateTargetId: alivePlayers[nextIndex].id });
     }
   },
+  triggerSubWeapon: () => {
+    liveInput.useSubWeapon = true;
+    set({ localLastSubWeaponTime: Date.now() });
+    get().sendInput();
+  },
   setInput: (newInput) => {
     Object.assign(liveInput, newInput);
     
@@ -557,10 +579,11 @@ export const useGameStore = create<StoreState>((set, get) => ({
     if (newInput.isRolling) timeUpdates.localLastRollTime = now;
     if (newInput.useAbility) timeUpdates.localLastAbilityTime = now;
     if (newInput.useAbility2) timeUpdates.localLastAbility2Time = now;
+    if (newInput.useSubWeapon) timeUpdates.localLastSubWeaponTime = now;
     if (newInput.isHealing) timeUpdates.localLastHealTime = now;
 
     // Only update zustand if shooting/ability/healing/rolling/zoomed changes to avoid 60fps re-render thrashing
-    if (newInput.isShooting !== undefined || newInput.isHealing !== undefined || newInput.useAbility !== undefined || newInput.useAbility2 !== undefined || newInput.isRolling !== undefined || newInput.isZoomed !== undefined || Object.keys(timeUpdates).length > 0) {
+    if (newInput.isShooting !== undefined || newInput.isHealing !== undefined || newInput.useAbility !== undefined || newInput.useAbility2 !== undefined || newInput.useSubWeapon !== undefined || newInput.isRolling !== undefined || newInput.isZoomed !== undefined || Object.keys(timeUpdates).length > 0) {
       set((state) => ({ 
         input: { ...state.input, ...newInput },
         ...timeUpdates
@@ -576,10 +599,10 @@ export const useGameStore = create<StoreState>((set, get) => ({
     const roundedZ = Math.round(liveInput.z * 10) / 10;
     const roundedRy = Math.round(liveInput.ry * 100) / 100;
     const roundedPitch = Math.round(liveInput.pitch * 100) / 100;
-    const isAction = !!(liveInput.isShooting || liveInput.isHealing || liveInput.useAbility || liveInput.useAbility2 || liveInput.isRolling || liveInput.jumpFromBus || liveInput.toggleGlider);
+    const isAction = !!(liveInput.isShooting || liveInput.isHealing || liveInput.useAbility || liveInput.useAbility2 || liveInput.useSubWeapon || liveInput.isRolling || liveInput.jumpFromBus || liveInput.toggleGlider);
 
     const now = performance.now();
-    const isOneShotAction = !!(liveInput.useAbility || liveInput.useAbility2 || liveInput.jumpFromBus || liveInput.toggleGlider || liveInput.isShooting);
+    const isOneShotAction = !!(liveInput.useAbility || liveInput.useAbility2 || liveInput.useSubWeapon || liveInput.jumpFromBus || liveInput.toggleGlider || liveInput.isShooting);
     if (now - lastSentTime < 33 && !isOneShotAction) return;
     // Adaptive send: only send if action occurred, moved/rotated, or 350ms heartbeat elapsed
     if (!isAction && lastSentInput && (now - lastSentTime < 350)) {
@@ -618,11 +641,15 @@ export const useGameStore = create<StoreState>((set, get) => ({
       isHealing: liveInput.isHealing,
       useAbility: liveInput.useAbility,
       useAbility2: liveInput.useAbility2,
+      useSubWeapon: liveInput.useSubWeapon,
       isRolling: liveInput.isRolling,
       jumpFromBus: liveInput.jumpFromBus,
       toggleGlider: liveInput.toggleGlider,
     });
     // One-shot triggers must reset after transmission
+    if (liveInput.useSubWeapon) {
+      liveInput.useSubWeapon = false;
+    }
     if (liveInput.toggleGlider) {
       liveInput.toggleGlider = false;
     }
@@ -684,7 +711,7 @@ export const useGameStore = create<StoreState>((set, get) => ({
     // Initialize WebRTC as Guest
     p2pManager.initAsGuest(
       (signal) => {
-        get().socket?.emit('p2p_signal', { targetUid: invite.inviterUid, signal });
+        get().socket?.emit('p2p_signal', { roomId: invite.p2pRoomId, targetUid: invite.inviterUid, signal });
       },
       (p2pData) => {
         if (p2pData && p2pData.type === 'stateUpdate') {

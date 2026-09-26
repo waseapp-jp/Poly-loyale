@@ -105,6 +105,7 @@ export interface UserProfileData {
 export interface LeaderboardEntryData {
   userId: string;
   displayName: string;
+  photoURL?: string;
   totalWins: number;
   totalKills: number;
   rating?: number;
@@ -191,24 +192,27 @@ export async function updateUserStats(
   mode: string = 'casual',
   score: number = 0,
   placement?: number
-): Promise<void> {
+): Promise<UserProfileData | null> {
   const userPath = `users/${userId}`;
   try {
     const docRef = doc(db, 'users', userId);
     const snap = await getDoc(docRef);
-    if (!snap.exists()) return;
+    if (!snap.exists()) return null;
 
     const current = snap.data() as UserProfileData;
+    const isRanked = mode === 'ranked';
 
     let updatedRankPoints = current.rankPoints || 0;
     let updatedRating = current.rating && current.rating >= 2000 ? current.rating : undefined;
 
-    if (finalRatingOrPoints >= 2000) {
-      updatedRating = finalRatingOrPoints;
-      updatedRankPoints = Math.max(updatedRankPoints, 2000);
-    } else {
-      updatedRankPoints = Math.max(0, finalRatingOrPoints);
-      updatedRating = undefined;
+    if (isRanked) {
+      if (finalRatingOrPoints >= 2000) {
+        updatedRating = finalRatingOrPoints;
+        updatedRankPoints = Math.max(updatedRankPoints, 2000);
+      } else {
+        updatedRankPoints = Math.max(0, finalRatingOrPoints);
+        updatedRating = undefined;
+      }
     }
 
     const updated: UserProfileData = {
@@ -230,6 +234,7 @@ export async function updateUserStats(
     const lbData: LeaderboardEntryData = {
       userId,
       displayName: updated.displayName,
+      photoURL: updated.photoURL || undefined,
       totalWins: updated.totalWins,
       totalKills: updated.totalKills,
       rating: updatedRating ?? updatedRankPoints,
@@ -250,27 +255,44 @@ export async function updateUserStats(
       score: actualScore,
       kills,
       ratingChange,
-      newRating,
+      newRating: updatedRating ?? updatedRankPoints,
       createdAt: updated.updatedAt,
     };
     await setDoc(historyRef, historyData);
+    return updated;
+  } catch (err) {
+    console.error('Error updating user stats in Firestore:', err);
+    return null;
+  }
+}
+
+export async function updateUserPhotoURL(userId: string, photoURL: string, displayName?: string): Promise<void> {
+  const userPath = `users/${userId}`;
+  try {
+    const docRef = doc(db, 'users', userId);
+    const updateData: any = { photoURL, updatedAt: new Date().toISOString() };
+    if (displayName) updateData.displayName = displayName;
+    
+    await updateDoc(docRef, updateData);
+
+    // Sync leaderboard photo/display name
+    const lbRef = doc(db, 'leaderboard', userId);
+    await setDoc(lbRef, updateData, { merge: true });
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, userPath);
   }
 }
 
 export async function fetchTopLeaderboard(): Promise<LeaderboardEntryData[]> {
-  const lbPath = 'leaderboard';
   try {
-    let snap;
+    let entries: LeaderboardEntryData[] = [];
     try {
-      const q = query(collection(db, 'leaderboard'), orderBy('rating', 'desc'), limit(30));
-      snap = await getDocs(q);
-    } catch {
-      const q = query(collection(db, 'leaderboard'), limit(50));
-      snap = await getDocs(q);
+      const q = query(collection(db, 'leaderboard'), limit(60));
+      const snap = await getDocs(q);
+      entries = snap.docs.map(d => d.data() as LeaderboardEntryData);
+    } catch (queryErr) {
+      console.warn('Leaderboard query warning:', queryErr);
     }
-    const entries = snap.docs.map(d => d.data() as LeaderboardEntryData);
     entries.sort((a, b) => {
       const rA = typeof a.rating === 'number' && Number.isFinite(a.rating) ? a.rating : 0;
       const rB = typeof b.rating === 'number' && Number.isFinite(b.rating) ? b.rating : 0;
@@ -278,9 +300,9 @@ export async function fetchTopLeaderboard(): Promise<LeaderboardEntryData[]> {
       if ((b.totalWins || 0) !== (a.totalWins || 0)) return (b.totalWins || 0) - (a.totalWins || 0);
       return (b.totalKills || 0) - (a.totalKills || 0);
     });
-    return entries.slice(0, 25);
+    return entries.slice(0, 30);
   } catch (err) {
-    handleFirestoreError(err, OperationType.LIST, lbPath);
+    console.error('Leaderboard fetch error:', err);
     return [];
   }
 }

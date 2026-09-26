@@ -80,14 +80,29 @@ export interface Obstacle {
   type?: 'building' | 'bunker' | 'crate' | 'pillar' | 'wall' | 'monolith' | 'ramp';
   rampDir?: 'nx' | 'px' | 'nz' | 'pz';
   color?: string;
+  isDestructible?: boolean;
+  hp?: number;
+  maxHp?: number;
 }
+
+export type ItemType = 'heal' | 'weapon' | 'speed' | 'power' | 'smoke' | 'stun' | 'shadow';
 
 export interface ItemState {
   id: string;
-  type: 'heal' | 'weapon';
+  type: ItemType;
   x: number;
   y: number;
   z: number;
+}
+
+export interface SmokeCloudState {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+  createdAt: number;
+  expiresAt: number;
 }
 
 export interface BombState {
@@ -105,6 +120,7 @@ export interface BombState {
   createdAt: number;
   exploded: boolean;
   isMine?: boolean;
+  bombType?: 'bomb' | 'smoke' | 'stun' | 'shadow';
 }
 
 export interface PlayerState {
@@ -136,6 +152,15 @@ export interface PlayerState {
   isFlying: boolean;
   isInvulnerable: boolean;
   hasShield: boolean;
+
+  // Subweapons & Consumable Buffs (from map pickups)
+  subWeapon?: ItemType | null;
+  speedBuffUntil?: number; // +60% speed for 15s
+  powerBuffUntil?: number; // +50% attack power for 15s
+  shadowStealthUntil?: number; // 15s invisibility until attack/damage
+  isShadowStealth?: boolean;
+  isBlindedUntil?: number; // stun grenade flashbang effect
+  blindIntensity?: number;
   
   // Rolling / Dodge
   isRolling?: boolean;
@@ -173,6 +198,7 @@ export interface GameState {
   players: Record<string, PlayerState>;
   items: Record<string, ItemState>;
   bombs: Record<string, BombState>;
+  smokeClouds?: Record<string, SmokeCloudState>;
   obstacles: Record<string, Obstacle>;
   status: 'waiting' | 'playing' | 'ended';
   matchTimer: number;
@@ -195,6 +221,7 @@ export interface ClientInput {
   isHealing: boolean; // Held down
   useAbility: boolean; // Trigger ability
   useAbility2?: boolean; // Trigger second ability (e.g., Scout Mine)
+  useSubWeapon?: boolean; // Trigger equipped consumable/sub-weapon (Smoke, Stun, Shadow, Power, Speed)
   isRolling?: boolean; // Trigger dodge roll
   isZoomed?: boolean; // Aim zoom / ADS
   jumpFromBus?: boolean; // Jump out of Battle Bus

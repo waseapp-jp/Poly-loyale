@@ -241,7 +241,7 @@ export default function App() {
 
   const handleReturnToLobby = () => {
     // If player died during match and match was not yet recorded
-    if (myPlayerIsDead && roomId && roomId !== lastProcessedMatch && auth.currentUser) {
+    if (myPlayerIsDead && roomId && roomId !== lastProcessedMatch) {
       setLastProcessedMatch(roomId);
       const otherAliveCount = Object.values(useGameStore.getState().gameState?.players || {}).filter(p => !p.isDead && p.id !== myId).length;
       const finalPlacement = Math.max(2, otherAliveCount + 1);
@@ -253,14 +253,17 @@ export default function App() {
         ? cloudProfile.rating
         : (profile.rating && profile.rating >= 2000 ? profile.rating : null);
 
-      const penalty = gameMode === 'ranked' ? 10 : 4;
-      const killPoints = Math.min(10, myScore * 3);
-      ratingChange = killPoints - penalty;
+      // Rating only changes in Ranked mode!
+      if (gameMode === 'ranked') {
+        const penalty = 10;
+        const killPoints = Math.min(10, myScore * 3);
+        ratingChange = killPoints - penalty;
 
-      if (currentRating !== null) {
-        currentRating = Math.max(2000.0, currentRating + (ratingChange * 0.5));
-      } else {
-        currentRankPoints = Math.max(0, currentRankPoints + ratingChange);
+        if (currentRating !== null) {
+          currentRating = Math.max(2000.0, currentRating + (ratingChange * 0.5));
+        } else {
+          currentRankPoints = Math.max(0, currentRankPoints + ratingChange);
+        }
       }
 
       const updated = {
@@ -272,18 +275,28 @@ export default function App() {
       setProfile(updated);
       localStorage.setItem('poly_profile', JSON.stringify(updated));
 
-      updateUserStats(
-        auth.currentUser.uid,
-        false,
-        myScore,
-        1,
-        charClass,
-        ratingChange,
-        currentRating !== null ? currentRating : currentRankPoints,
-        gameMode || 'casual',
-        myScore,
-        finalPlacement
-      ).catch((err) => console.error('Error syncing match on lobby return:', err));
+      if (auth.currentUser) {
+        updateUserStats(
+          auth.currentUser.uid,
+          false,
+          myScore,
+          1,
+          charClass,
+          ratingChange,
+          currentRating !== null ? currentRating : currentRankPoints,
+          gameMode || 'casual',
+          myScore,
+          finalPlacement
+        ).then(() => {
+          setCloudProfile(prev => prev ? {
+            ...prev,
+            totalKills: prev.totalKills + myScore,
+            totalMatches: prev.totalMatches + 1,
+            rankPoints: currentRankPoints,
+            rating: currentRating ?? undefined,
+          } : null);
+        }).catch((err) => console.error('Error syncing match on lobby return:', err));
+      }
     }
     leaveGame();
     setHasStarted(false);
@@ -298,10 +311,10 @@ export default function App() {
     }, 120);
   };
 
-  // Process Match End logic - updates Rating & Rank Points for ALL game modes!
+  // Process Match End logic - strictly updates Rating & Rank Points in Ranked mode only!
   useEffect(() => {
-    if (status === 'ended' && roomId !== lastProcessedMatch) {
-      setLastProcessedMatch(roomId!);
+    if (status === 'ended' && roomId && roomId !== lastProcessedMatch) {
+      setLastProcessedMatch(roomId);
       
       const isWin = winner === myId || (myPlayerTeam && winner === myPlayerTeam);
       const myScore = myPlayerScore || 0;
@@ -317,31 +330,34 @@ export default function App() {
       let newRating: number | null = currentRating;
       let ratingChange = 0;
 
-      if (isWin) {
-        const killBonus = Math.min(15, myScore * 3);
-        const streakBonus = Math.min(10, newStreak * 2);
-        const pointsEarned = 15 + killBonus + streakBonus;
-        
-        if (newRating === null) {
-          ratingChange = pointsEarned;
-          newRankPoints += pointsEarned;
-          if (newRankPoints >= 2000) {
-            newRating = 2000.0 + (newStreak * 5);
+      // Rate only changes if the played match was Ranked mode!
+      if (gameMode === 'ranked') {
+        if (isWin) {
+          const killBonus = Math.min(15, myScore * 3);
+          const streakBonus = Math.min(10, newStreak * 2);
+          const pointsEarned = 15 + killBonus + streakBonus;
+          
+          if (newRating === null) {
+            ratingChange = pointsEarned;
+            newRankPoints += pointsEarned;
+            if (newRankPoints >= 2000) {
+              newRating = 2000.0 + (newStreak * 5);
+            }
+          } else {
+            ratingChange = 5.0 + Math.min(5, myScore) + Math.min(5, newStreak * 1.0);
+            newRating += ratingChange;
           }
         } else {
-          ratingChange = 5.0 + Math.min(5, myScore) + Math.min(5, newStreak * 1.0);
-          newRating += ratingChange;
-        }
-      } else {
-        const killPoints = Math.min(10, myScore * 2);
-        const penalty = gameMode === 'ranked' ? 10 : 3;
-        const netChange = killPoints - penalty;
-        ratingChange = netChange;
+          const killPoints = Math.min(10, myScore * 2);
+          const penalty = 10;
+          const netChange = killPoints - penalty;
+          ratingChange = netChange;
 
-        if (newRating !== null) {
-          newRating = Math.max(2000.0, newRating + (netChange * 0.5));
-        } else {
-          newRankPoints = Math.max(0, newRankPoints + netChange);
+          if (newRating !== null) {
+            newRating = Math.max(2000.0, newRating + (netChange * 0.5));
+          } else {
+            newRankPoints = Math.max(0, newRankPoints + netChange);
+          }
         }
       }
 

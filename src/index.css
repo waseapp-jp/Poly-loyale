@@ -1,14 +1,13 @@
 @import "tailwindcss";
 
 *, *::before, *::after {
-  touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
 }
 
 input, textarea, select {
-  touch-action: auto;
+  touch-action: auto !important;
   -webkit-user-select: auto;
   user-select: auto;
 }
@@ -24,27 +23,50 @@ html, body, #root {
   left: 0;
   right: 0;
   bottom: 0;
-  touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
 }
-.allow-scroll, .allow-scroll *, .overflow-y-auto, .overflow-y-auto *, .overflow-auto, .overflow-auto * {
+
+canvas {
+  touch-action: none;
+}
+
+.touch-none {
+  touch-action: none !important;
+}
+
+/* Allow full momentum touch and mouse wheel scrolling on any scroll container or modal */
+.allow-scroll, 
+.allow-scroll *, 
+.overflow-y-auto, 
+.overflow-y-auto *, 
+.overflow-auto, 
+.overflow-auto *,
+[role="dialog"],
+[role="dialog"] * {
   touch-action: pan-y !important;
-  -webkit-overflow-scrolling: touch;
+  -webkit-overflow-scrolling: touch !important;
   overscroll-behavior-y: contain;
+  pointer-events: auto;
 }
 
-.allow-scroll-x, .allow-scroll-x *, .overflow-x-auto, .overflow-x-auto * {
+.allow-scroll-x, 
+.allow-scroll-x *, 
+.overflow-x-auto, 
+.overflow-x-auto * {
   touch-action: pan-x pan-y !important;
-  -webkit-overflow-scrolling: touch;
+  -webkit-overflow-scrolling: touch !important;
+  pointer-events: auto;
 }
 
-.allow-scroll-all, .allow-scroll-all * {
+.allow-scroll-all, 
+.allow-scroll-all * {
   touch-action: pan-x pan-y !important;
-  -webkit-overflow-scrolling: touch;
+  -webkit-overflow-scrolling: touch !important;
+  pointer-events: auto;
 }
 
 /* Rank Aura & Shine Keyframe Animations */
