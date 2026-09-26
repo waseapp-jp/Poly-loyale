@@ -1743,7 +1743,7 @@ async function startServer() {
             if (obs.hp <= 0) {
               // Destroy Crate & Drop Loot!
               delete room.obstacles[obsId];
-              initRoomObstacles(roomId, room.obstacles);
+              buildRoomSpatialData(roomId, room.obstacles);
               
               // 100% guarantee a drop from breaking wooden crates!
               const lootPool: ItemType[] = ['speed', 'power', 'weapon', 'heal', 'smoke', 'stun', 'shadow'];
@@ -1759,6 +1759,8 @@ async function startServer() {
               markItemsDirty(roomId);
               
               io.to(roomId).emit('obstacleDestroyed', { id: obsId, x: ox, y: oy, z: oz });
+              io.to(roomId).emit('stateUpdate', { obstacles: room.obstacles });
+            } else {
               io.to(roomId).emit('stateUpdate', { obstacles: room.obstacles });
             }
             break; // 1 crate hit per shot/slash
@@ -2359,7 +2361,7 @@ async function startServer() {
                       obs.hp = (obs.hp || 40) - 80;
                       if (obs.hp <= 0) {
                         delete room.obstacles[obsId];
-                        initRoomObstacles(roomId, room.obstacles);
+                        buildRoomSpatialData(roomId, room.obstacles);
                         const lootPool: ItemType[] = ['speed', 'power', 'weapon', 'heal', 'smoke', 'stun', 'shadow'];
                         const lootType = lootPool[Math.floor(Math.random() * lootPool.length)];
                         const newItemId = 'crate_drop_' + Math.random().toString(36).substring(2);
@@ -2372,6 +2374,8 @@ async function startServer() {
                         };
                         markItemsDirty(roomId);
                         io.to(roomId).emit('obstacleDestroyed', { id: obsId, x: obs.x, y: obs.height / 2, z: obs.z });
+                        io.to(roomId).emit('stateUpdate', { obstacles: room.obstacles });
+                      } else {
                         io.to(roomId).emit('stateUpdate', { obstacles: room.obstacles });
                       }
                     }
