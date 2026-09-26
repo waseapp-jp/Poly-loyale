@@ -254,7 +254,7 @@ export default function App() {
       // Calculate Rank Points (RP) & Rating progression ONLY for Ranked mode ('ranked')
       if (gameMode === 'ranked') {
         const killPoints = Math.min(15, myScore * 3);
-        const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : -5);
+        const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : 0);
         ratingChange = killPoints + placementPoints;
         currentRankPoints = Math.max(0, currentRankPoints + ratingChange);
       }
@@ -335,7 +335,7 @@ export default function App() {
           const killPoints = Math.min(15, myScore * 3);
           const otherAliveCount = Object.values(useGameStore.getState().gameState?.players || {}).filter(p => !p.isDead && p.id !== myId).length;
           const finalPlacement = Math.max(2, otherAliveCount + 1);
-          const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : -5);
+          const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : 0);
           
           ratingChange = killPoints + placementPoints;
         }

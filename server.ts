@@ -1293,6 +1293,9 @@ async function startServer() {
             player.y = groundH + 1;
             player.isSkydiving = false;
             player.isGliding = false;
+            // 3.5s landing invulnerability to prevent instant bot eliminate upon touching ground
+            player.isInvulnerable = true;
+            (player as any).landingInvulnerableUntil = Date.now() + 3500;
           }
         }
       }
@@ -2177,10 +2180,20 @@ async function startServer() {
             p.y = groundH + 1;
           }
 
-          // Reset abilities after duration
+          // Reset abilities & landing invulnerability after duration
           const ability = CLASS_ABILITIES[p.characterClass];
           const duration = ability ? ability.durationMs : 7000;
-          if (p.isInvulnerable && now - p.lastAbilityTime > duration) p.isInvulnerable = false;
+          const pExt = p as any;
+          if (p.isInvulnerable) {
+            if (pExt.landingInvulnerableUntil) {
+              if (now > pExt.landingInvulnerableUntil) {
+                p.isInvulnerable = false;
+                pExt.landingInvulnerableUntil = undefined;
+              }
+            } else if (now - p.lastAbilityTime > duration) {
+              p.isInvulnerable = false;
+            }
+          }
           if (p.hasShield && now - p.lastAbilityTime > duration) p.hasShield = false;
           if (p.isFlying && now - p.lastAbilityTime > duration) p.isFlying = false;
         });

@@ -102,7 +102,7 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
           }
 
           const killPoints = Math.min(15, myPlayer.score * 3);
-          const placementPoints = otherAlive.length < 3 ? 10 : (otherAlive.length < 10 ? 5 : -5);
+          const placementPoints = otherAlive.length < 3 ? 10 : (otherAlive.length < 10 ? 5 : 0);
           const totalPoints = killPoints + placementPoints;
           return (
             <div className="w-full mb-5 bg-gradient-to-r from-amber-500/10 via-yellow-500/15 to-amber-500/10 border border-yellow-500/40 rounded-2xl p-3 text-center">
