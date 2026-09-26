@@ -183,12 +183,20 @@ function RatingHistoryChart({ history }: { history: MatchHistoryData[] }) {
 
 interface Props {
   onUserLoaded?: (profile: UserProfileData | null) => void;
+  externalProfile?: UserProfileData | null;
 }
 
-export function FirebaseAccount({ onUserLoaded }: Props) {
+export function FirebaseAccount({ onUserLoaded, externalProfile }: Props) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Synchronize external profile updates (e.g. rating & match end updates from App)
+  useEffect(() => {
+    if (externalProfile) {
+      setProfile(externalProfile);
+    }
+  }, [externalProfile]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntryData[]>([]);
   const [isLoadingLb, setIsLoadingLb] = useState(false);

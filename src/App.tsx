@@ -279,6 +279,7 @@ export default function App() {
       localStorage.setItem('poly_profile', JSON.stringify(updated));
 
       if (auth.currentUser) {
+        const activeMode = gameMode || mode;
         updateUserStats(
           auth.currentUser.uid,
           false,
@@ -287,17 +288,21 @@ export default function App() {
           charClass,
           ratingChange,
           currentRating !== null ? currentRating : currentRankPoints,
-          gameMode || 'bot',
+          activeMode,
           myScore,
           finalPlacement
-        ).then(() => {
-          setCloudProfile(prev => prev ? {
-            ...prev,
-            totalKills: (prev.totalKills || 0) + myScore,
-            totalMatches: (prev.totalMatches || 0) + 1,
-            rankPoints: currentRankPoints,
-            rating: currentRating ?? undefined,
-          } : null);
+        ).then((updatedDoc) => {
+          if (updatedDoc) {
+            setCloudProfile(updatedDoc);
+          } else {
+            setCloudProfile(prev => prev ? {
+              ...prev,
+              totalKills: (prev.totalKills || 0) + myScore,
+              totalMatches: (prev.totalMatches || 0) + 1,
+              rankPoints: currentRankPoints,
+              rating: currentRating ?? undefined,
+            } : null);
+          }
         }).catch((err) => console.error('Error syncing match on lobby return:', err));
       }
     }
@@ -385,6 +390,7 @@ export default function App() {
         const finalRating = newRating !== null ? newRating : newRankPoints;
         const otherAliveCount = Object.values(useGameStore.getState().gameState?.players || {}).filter(p => !p.isDead && p.id !== myId).length;
         const finalPlacement = isWin ? 1 : Math.max(2, otherAliveCount + 1);
+        const activeMode = gameMode || mode;
 
         updateUserStats(
           auth.currentUser.uid,
@@ -394,18 +400,22 @@ export default function App() {
           charClass,
           ratingChange,
           finalRating,
-          gameMode || 'casual',
+          activeMode,
           myScore,
           finalPlacement
-        ).then(() => {
-          setCloudProfile(prev => prev ? {
-            ...prev,
-            totalWins: newWins,
-            totalKills: prev.totalKills + myScore,
-            totalMatches: prev.totalMatches + 1,
-            rankPoints: newRankPoints,
-            rating: newRating ?? undefined,
-          } : null);
+        ).then((updatedDoc) => {
+          if (updatedDoc) {
+            setCloudProfile(updatedDoc);
+          } else {
+            setCloudProfile(prev => prev ? {
+              ...prev,
+              totalWins: newWins,
+              totalKills: prev.totalKills + myScore,
+              totalMatches: prev.totalMatches + 1,
+              rankPoints: newRankPoints,
+              rating: newRating ?? undefined,
+            } : null);
+          }
         }).catch((err) => console.error('Error syncing match to Firebase:', err));
       }
     }
@@ -501,7 +511,7 @@ export default function App() {
           </button>
         </div>
 
-        <FirebaseAccount onUserLoaded={setCloudProfile} />
+        <FirebaseAccount onUserLoaded={setCloudProfile} externalProfile={cloudProfile || profile} />
         
         <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mb-2 max-w-3xl">
           <button 
