@@ -199,19 +199,16 @@ export async function updateUserStats(
     if (!snap.exists()) return;
 
     const current = snap.data() as UserProfileData;
-    const isRanked = mode === 'ranked';
 
     let updatedRankPoints = current.rankPoints || 0;
     let updatedRating = current.rating && current.rating >= 2000 ? current.rating : undefined;
 
-    if (isRanked) {
-      if (finalRatingOrPoints >= 2000) {
-        updatedRating = finalRatingOrPoints;
-        updatedRankPoints = Math.max(updatedRankPoints, 2000);
-      } else {
-        updatedRankPoints = Math.max(0, finalRatingOrPoints);
-        updatedRating = undefined;
-      }
+    if (finalRatingOrPoints >= 2000) {
+      updatedRating = finalRatingOrPoints;
+      updatedRankPoints = Math.max(updatedRankPoints, 2000);
+    } else {
+      updatedRankPoints = Math.max(0, finalRatingOrPoints);
+      updatedRating = undefined;
     }
 
     const updated: UserProfileData = {
