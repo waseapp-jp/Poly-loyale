@@ -91,32 +91,31 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
         </div>
 
         {/* Mode & Rank Rating Notice */}
-        {gameState.mode === 'ranked' ? (
-          <div className="w-full mb-5 bg-gradient-to-r from-amber-500/10 via-yellow-500/15 to-amber-500/10 border border-yellow-500/40 rounded-2xl p-3 text-center">
-            <span className="text-[11px] font-black text-yellow-300 uppercase tracking-wider block mb-1">
-              🏆 ランクマッチ レート変動 (Ranked)
-            </span>
-            <div className="flex items-center justify-center gap-3 text-xs font-bold">
-              <span className="text-emerald-400">撃破pt: +{Math.min(10, myPlayer.score * 3)}</span>
-              <span className="text-slate-400">/</span>
-              <span className="text-red-400">ペナルティ: -10</span>
-              <span className="text-slate-400">→</span>
-              <span className={`font-black px-2 py-0.5 rounded ${
-                Math.min(10, myPlayer.score * 3) - 10 >= 0 
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
-                  : 'bg-red-500/20 text-red-300 border border-red-500/40'
-              }`}>
-                {Math.min(10, myPlayer.score * 3) - 10 >= 0 ? '+' : ''}
-                {Math.min(10, myPlayer.score * 3) - 10} RP
+        {(() => {
+          const killPoints = Math.min(15, myPlayer.score * 3);
+          const placementPoints = otherAlive.length < 3 ? 10 : (otherAlive.length < 10 ? 5 : -5);
+          const totalPoints = killPoints + placementPoints;
+          return (
+            <div className="w-full mb-5 bg-gradient-to-r from-amber-500/10 via-yellow-500/15 to-amber-500/10 border border-yellow-500/40 rounded-2xl p-3 text-center">
+              <span className="text-[11px] font-black text-yellow-300 uppercase tracking-wider block mb-1">
+                🏆 ランクポイント (RP) 獲得
               </span>
+              <div className="flex items-center justify-center gap-3 text-xs font-bold">
+                <span className="text-emerald-400">撃破pt: +{killPoints} RP</span>
+                <span className="text-slate-400">/</span>
+                <span className={placementPoints >= 0 ? "text-sky-400" : "text-red-400"}>順位pt: {placementPoints >= 0 ? '+' : ''}{placementPoints} RP</span>
+                <span className="text-slate-400">→</span>
+                <span className={`font-black px-2.5 py-0.5 rounded ${
+                  totalPoints >= 0 
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
+                    : 'bg-red-500/20 text-red-300 border border-red-500/40'
+                }`}>
+                  {totalPoints >= 0 ? '+' : ''}{totalPoints} RP
+                </span>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="w-full mb-4 bg-slate-800/40 border border-white/5 rounded-xl px-3 py-1.5 text-center text-[11px] text-slate-400">
-            <span>モード: <strong className="text-slate-300 font-bold">{gameState.mode === 'p2p_duel' ? 'P2P 1v1 対戦' : gameState.mode === 'casual' ? 'カジュアル' : gameState.mode === 'bot' ? '練習BOT' : 'カスタム'}</strong></span>
-            <span className="ml-2 text-slate-500 font-semibold">(※ レート変動なし)</span>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Class Info */}
         <div className="text-xs text-slate-400 mb-6 bg-slate-800/50 px-4 py-2 rounded-full border border-white/5">

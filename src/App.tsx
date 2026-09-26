@@ -253,16 +253,17 @@ export default function App() {
         ? cloudProfile.rating
         : (profile.rating && profile.rating >= 2000 ? profile.rating : null);
 
-      // Rating only changes in Ranked mode!
-      if (gameMode === 'ranked') {
-        const penalty = 10;
-        const killPoints = Math.min(10, myScore * 3);
-        ratingChange = killPoints - penalty;
+      // Calculate Rank Points (RP) & Rating progression for ALL game modes
+      const killPoints = Math.min(15, myScore * 3);
+      const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : -5);
+      ratingChange = killPoints + placementPoints;
 
-        if (currentRating !== null) {
-          currentRating = Math.max(2000.0, currentRating + (ratingChange * 0.5));
-        } else {
-          currentRankPoints = Math.max(0, currentRankPoints + ratingChange);
+      if (currentRating !== null) {
+        currentRating = Math.max(2000.0, currentRating + (ratingChange * 0.2));
+      } else {
+        currentRankPoints = Math.max(0, currentRankPoints + ratingChange);
+        if (currentRankPoints >= 2000) {
+          currentRating = 2000.0 + (currentRankPoints - 2000) * 0.1;
         }
       }
 
@@ -284,14 +285,14 @@ export default function App() {
           charClass,
           ratingChange,
           currentRating !== null ? currentRating : currentRankPoints,
-          gameMode || 'casual',
+          gameMode || 'bot',
           myScore,
           finalPlacement
         ).then(() => {
           setCloudProfile(prev => prev ? {
             ...prev,
-            totalKills: prev.totalKills + myScore,
-            totalMatches: prev.totalMatches + 1,
+            totalKills: (prev.totalKills || 0) + myScore,
+            totalMatches: (prev.totalMatches || 0) + 1,
             rankPoints: currentRankPoints,
             rating: currentRating ?? undefined,
           } : null);
@@ -311,7 +312,7 @@ export default function App() {
     }, 120);
   };
 
-  // Process Match End logic - strictly updates Rating & Rank Points in Ranked mode only!
+  // Process Match End logic - updates Rating & Rank Points for ALL game modes
   useEffect(() => {
     if (status === 'ended' && roomId && roomId !== lastProcessedMatch) {
       setLastProcessedMatch(roomId);
@@ -330,33 +331,35 @@ export default function App() {
       let newRating: number | null = currentRating;
       let ratingChange = 0;
 
-      // Rate only changes if the played match was Ranked mode!
-      if (gameMode === 'ranked') {
-        if (isWin) {
-          const killBonus = Math.min(15, myScore * 3);
-          const streakBonus = Math.min(10, newStreak * 2);
-          const pointsEarned = 15 + killBonus + streakBonus;
-          
-          if (newRating === null) {
-            ratingChange = pointsEarned;
-            newRankPoints += pointsEarned;
-            if (newRankPoints >= 2000) {
-              newRating = 2000.0 + (newStreak * 5);
-            }
-          } else {
-            ratingChange = 5.0 + Math.min(5, myScore) + Math.min(5, newStreak * 1.0);
-            newRating += ratingChange;
+      if (isWin) {
+        const killBonus = Math.min(15, myScore * 3);
+        const streakBonus = Math.min(10, newStreak * 2);
+        const pointsEarned = 20 + killBonus + streakBonus;
+        
+        if (newRating === null) {
+          ratingChange = pointsEarned;
+          newRankPoints += pointsEarned;
+          if (newRankPoints >= 2000) {
+            newRating = 2000.0 + (newStreak * 5);
           }
         } else {
-          const killPoints = Math.min(10, myScore * 2);
-          const penalty = 10;
-          const netChange = killPoints - penalty;
-          ratingChange = netChange;
+          ratingChange = 5.0 + Math.min(5, myScore) + Math.min(5, newStreak * 1.0);
+          newRating += ratingChange;
+        }
+      } else {
+        const killPoints = Math.min(15, myScore * 3);
+        const otherAliveCount = Object.values(useGameStore.getState().gameState?.players || {}).filter(p => !p.isDead && p.id !== myId).length;
+        const finalPlacement = Math.max(2, otherAliveCount + 1);
+        const placementPoints = finalPlacement <= 3 ? 10 : (finalPlacement <= 10 ? 5 : -5);
+        
+        ratingChange = killPoints + placementPoints;
 
-          if (newRating !== null) {
-            newRating = Math.max(2000.0, newRating + (netChange * 0.5));
-          } else {
-            newRankPoints = Math.max(0, newRankPoints + netChange);
+        if (newRating !== null) {
+          newRating = Math.max(2000.0, newRating + (ratingChange * 0.2));
+        } else {
+          newRankPoints = Math.max(0, newRankPoints + ratingChange);
+          if (newRankPoints >= 2000) {
+            newRating = 2000.0 + (newRankPoints - 2000) * 0.1;
           }
         }
       }
