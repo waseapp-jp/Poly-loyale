@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+*, *::before, *::after {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input, textarea, select {
+  touch-action: auto;
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+.allow-scroll {
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.allow-scroll-x, .allow-scroll-x *, .overflow-x-auto, .overflow-x-auto * {
+  touch-action: pan-x pan-y !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.allow-scroll-all, .allow-scroll-all * {
+  touch-action: pan-x pan-y !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Rank Aura & Shine Keyframe Animations */
+@keyframes rankShimmer {
+  0% { transform: translateX(-100%) rotate(25deg); }
+  100% { transform: translateX(250%) rotate(25deg); }
+}
+
+@keyframes rankPulseAura {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0.95; transform: scale(1.03); }
+}
+
+@keyframes rankRotateConic {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes rankParticleDrift {
+  0% { transform: translateY(0px) scale(0.8); opacity: 0; }
+  30% { opacity: 0.9; }
+  80% { opacity: 0.8; }
+  100% { transform: translateY(-24px) scale(1.1); opacity: 0; }
+}
+
+@keyframes godCosmicShift {
+  0% { filter: hue-rotate(0deg) brightness(1.05); }
+  50% { filter: hue-rotate(180deg) brightness(1.25); }
+  100% { filter: hue-rotate(360deg) brightness(1.05); }
+}
+
+.animate-rank-shimmer {
+  animation: rankShimmer 3s ease-in-out infinite;
+}
+
+.animate-rank-pulse {
+  animation: rankPulseAura 2.6s ease-in-out infinite;
+}
+
+.animate-rank-rotate {
+  animation: rankRotateConic 8s linear infinite;
+}
+
+.animate-god-cosmic {
+  animation: godCosmicShift 6s ease-in-out infinite;
+}
+

@@ -1,0 +1,299 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account profile and battle statistics",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth user UID",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Player in-game callsign",
+          "maxLength": 30,
+          "minLength": 1
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address",
+          "maxLength": 200
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Profile picture URL",
+          "maxLength": 500
+        },
+        "totalWins": {
+          "type": "number",
+          "description": "Total victory royale match wins"
+        },
+        "totalKills": {
+          "type": "number",
+          "description": "Total enemies eliminated"
+        },
+        "totalDeaths": {
+          "type": "number",
+          "description": "Total deaths"
+        },
+        "totalMatches": {
+          "type": "number",
+          "description": "Total matches played"
+        },
+        "favoriteClass": {
+          "type": "string",
+          "description": "Most played character class",
+          "maxLength": 30
+        },
+        "rating": {
+          "type": "number",
+          "description": "Current ELO or rating"
+        },
+        "rankPoints": {
+          "type": "number",
+          "description": "Current rank points"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Account registration timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Profile last update timestamp"
+        }
+      },
+      "required": ["userId", "displayName", "totalWins", "totalKills", "totalMatches", "createdAt", "updatedAt"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Global leaderboard entry for top players",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Player UID",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Player callsign",
+          "maxLength": 30,
+          "minLength": 1
+        },
+        "totalWins": {
+          "type": "number",
+          "description": "Number of victories"
+        },
+        "totalKills": {
+          "type": "number",
+          "description": "Number of kills"
+        },
+        "rating": {
+          "type": "number",
+          "description": "Player rating"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["userId", "displayName", "totalWins", "totalKills", "updatedAt"]
+    },
+    "MatchHistory": {
+      "title": "MatchHistory",
+      "description": "Record of a completed match for a user",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique history entry ID",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Player UID",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "mode": {
+          "type": "string",
+          "description": "Match mode",
+          "maxLength": 30
+        },
+        "placement": {
+          "type": "number",
+          "description": "Final placement (1 = win)"
+        },
+        "score": {
+          "type": "number",
+          "description": "Final score earned in the match"
+        },
+        "kills": {
+          "type": "number",
+          "description": "Kills in this match"
+        },
+        "ratingChange": {
+          "type": "number",
+          "description": "Change in rating/rank points"
+        },
+        "newRating": {
+          "type": "number",
+          "description": "New rating after match"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp of match completion"
+        }
+      },
+      "required": ["id", "userId", "mode", "placement", "kills", "ratingChange", "newRating", "createdAt"]
+    },
+    "FriendItem": {
+      "title": "FriendItem",
+      "description": "Friend record stored under a user's friends collection",
+      "type": "object",
+      "properties": {
+        "friendUid": {
+          "type": "string",
+          "description": "UID of the friend",
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of the friend",
+          "maxLength": 30
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Photo URL of the friend",
+          "maxLength": 500
+        },
+        "addedAt": {
+          "type": "string",
+          "description": "Timestamp when friendship was formed"
+        }
+      },
+      "required": ["friendUid", "displayName", "addedAt"]
+    },
+    "FriendRequestItem": {
+      "title": "FriendRequestItem",
+      "description": "Friend request sent from one user to another",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Request ID",
+          "maxLength": 128
+        },
+        "fromUid": {
+          "type": "string",
+          "description": "Sender UID",
+          "maxLength": 128
+        },
+        "fromName": {
+          "type": "string",
+          "description": "Sender name",
+          "maxLength": 30
+        },
+        "fromPhoto": {
+          "type": "string",
+          "description": "Sender photo URL",
+          "maxLength": 500
+        },
+        "toUid": {
+          "type": "string",
+          "description": "Recipient UID",
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "description": "Status (pending, accepted, rejected)",
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp of creation"
+        }
+      },
+      "required": ["id", "fromUid", "fromName", "toUid", "status", "createdAt"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "User game rating and feedback review",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Review document ID",
+          "maxLength": 128
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Author display name",
+          "maxLength": 30
+        },
+        "rating": {
+          "type": "number",
+          "description": "Overall star rating (1 to 5)"
+        },
+        "controlsRating": {
+          "type": "number",
+          "description": "Controls & view rating (1 to 5)"
+        },
+        "balanceRating": {
+          "type": "number",
+          "description": "Game balance rating (1 to 5)"
+        },
+        "comment": {
+          "type": "string",
+          "description": "Review text feedback",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp ISO string"
+        },
+        "replyText": {
+          "type": "string",
+          "description": "Official developer reply text",
+          "maxLength": 500
+        },
+        "repliedAt": {
+          "type": "string",
+          "description": "Developer reply timestamp"
+        }
+      },
+      "required": ["id", "authorName", "rating", "comment", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents keyed by Firebase Auth UID"
+    },
+    "/leaderboard/{userId}": {
+      "schema": "LeaderboardEntry",
+      "description": "Global leaderboard records keyed by user UID"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "User reviews and feedback ratings"
+    },
+    "/users/{userId}/history/{historyId}": {
+      "schema": "MatchHistory",
+      "description": "Match history records for a user"
+    },
+    "/users/{userId}/friends/{friendId}": {
+      "schema": "FriendItem",
+      "description": "Friend records subcollection"
+    },
+    "/users/{userId}/friendRequests/{requestId}": {
+      "schema": "FriendRequestItem",
+      "description": "Friend requests subcollection"
+    }
+  }
+}
