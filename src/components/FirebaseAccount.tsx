@@ -250,11 +250,16 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
     setIsLoadingProfile(true);
     try {
       if (user) {
+        const freshProfile = await loadOrCreateUserProfile(user);
+        if (freshProfile) {
+          setProfile(freshProfile);
+          onUserLoaded?.(freshProfile);
+        }
         const h = await fetchUserHistory(user.uid);
         setHistory(h || []);
       }
     } catch (err) {
-      console.error('Failed to load history:', err);
+      console.error('Failed to load profile or history:', err);
     } finally {
       setIsLoadingProfile(false);
     }

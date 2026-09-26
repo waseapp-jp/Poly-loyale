@@ -134,12 +134,6 @@ export async function loadOrCreateUserProfile(user: User): Promise<UserProfileDa
 
     if (snap.exists()) {
       profile = snap.data() as UserProfileData;
-      // Fix legacy bug where default rating was erroneously initialized as 2000 for new users
-      if (profile.rating === 2000 && (!profile.rankPoints || profile.rankPoints < 2000)) {
-        profile.rating = undefined;
-        profile.rankPoints = profile.rankPoints || 0;
-        await setDoc(docRef, { rating: null, rankPoints: profile.rankPoints }, { merge: true });
-      }
     } else {
       profile = {
         userId: user.uid,
@@ -191,20 +185,21 @@ export async function updateUserStats(
   mode: string = 'casual',
   score: number = 0,
   placement?: number
-): Promise<void> {
+): Promise<UserProfileData | undefined> {
   const userPath = `users/${userId}`;
   try {
     const docRef = doc(db, 'users', userId);
     const snap = await getDoc(docRef);
-    if (!snap.exists()) return;
+    if (!snap.exists()) return undefined;
 
     const current = snap.data() as UserProfileData;
     const isRanked = mode === 'ranked';
 
     let updatedRankPoints = current.rankPoints || 0;
-    let updatedRating = current.rating && current.rating >= 2000 ? current.rating : undefined;
+    let updatedRating: number | undefined = current.rating && current.rating >= 2000 ? current.rating : undefined;
 
-    if (isRanked) {
+    // Persist rating/rankPoints whenever in ranked mode OR when rating/points values are provided
+    if (isRanked || finalRatingOrPoints > 0 || ratingChange !== 0) {
       if (finalRatingOrPoints >= 2000) {
         updatedRating = finalRatingOrPoints;
         updatedRankPoints = Math.max(updatedRankPoints, 2000);
@@ -226,7 +221,11 @@ export async function updateUserStats(
       updatedAt: new Date().toISOString(),
     };
 
-    await setDoc(docRef, updated);
+    // Explicitly write document ensuring rating field is preserved or cleared
+    await setDoc(docRef, {
+      ...updated,
+      rating: updatedRating ?? null,
+    });
 
     // Also update public leaderboard
     const lbRef = doc(db, 'leaderboard', userId);
@@ -257,6 +256,8 @@ export async function updateUserStats(
       createdAt: updated.updatedAt,
     };
     await setDoc(historyRef, historyData);
+
+    return updated;
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, userPath);
   }

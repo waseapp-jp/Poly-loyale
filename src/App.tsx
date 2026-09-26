@@ -301,6 +301,7 @@ export default function App() {
   });
 
   // Synchronize cloud profile into active profile state
+  // Synchronize cloud profile into active profile state
   useEffect(() => {
     if (cloudProfile) {
       setProfile((prev: any) => ({
@@ -356,7 +357,11 @@ export default function App() {
         gameMode || 'casual',
         myScore,
         finalPlacement
-      ).catch((err) => console.error('Error syncing match on lobby return:', err));
+      ).then((freshProfile) => {
+        if (freshProfile) {
+          setCloudProfile(freshProfile);
+        }
+      }).catch((err) => console.error('Error syncing match on lobby return:', err));
     }
     leaveGame();
     setHasStarted(false);
@@ -449,15 +454,10 @@ export default function App() {
           gameMode || 'casual',
           myScore,
           finalPlacement
-        ).then(() => {
-          setCloudProfile(prev => prev ? {
-            ...prev,
-            totalWins: newWins,
-            totalKills: prev.totalKills + myScore,
-            totalMatches: prev.totalMatches + 1,
-            rankPoints: newRankPoints,
-            rating: newRating ?? undefined,
-          } : null);
+        ).then((freshProfile) => {
+          if (freshProfile) {
+            setCloudProfile(freshProfile);
+          }
         }).catch((err) => console.error('Error syncing match to Firebase:', err));
       }
     }
