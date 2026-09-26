@@ -92,13 +92,22 @@ export function EliminatedModal({ onReturnToLobby, onPlayAgain }: EliminatedModa
 
         {/* Mode & Rank Rating Notice */}
         {(() => {
+          const isRankedMode = gameState.mode === 'ranked';
+          if (!isRankedMode) {
+            return (
+              <div className="w-full mb-5 bg-slate-800/60 border border-slate-700/60 rounded-2xl p-2.5 text-center text-xs text-slate-400">
+                <span>🎮 モード: <strong className="text-slate-200 capitalize">{gameState.mode === 'bot' ? 'Bot Solo' : gameState.mode}</strong> (※レート・RPの変動は<strong className="text-amber-400">ランク戦(Ranked)</strong>限定です)</span>
+              </div>
+            );
+          }
+
           const killPoints = Math.min(15, myPlayer.score * 3);
           const placementPoints = otherAlive.length < 3 ? 10 : (otherAlive.length < 10 ? 5 : -5);
           const totalPoints = killPoints + placementPoints;
           return (
             <div className="w-full mb-5 bg-gradient-to-r from-amber-500/10 via-yellow-500/15 to-amber-500/10 border border-yellow-500/40 rounded-2xl p-3 text-center">
               <span className="text-[11px] font-black text-yellow-300 uppercase tracking-wider block mb-1">
-                🏆 ランクポイント (RP) 獲得
+                🏆 ランク戦 レートポイント (RP) 獲得
               </span>
               <div className="flex items-center justify-center gap-3 text-xs font-bold">
                 <span className="text-emerald-400">撃破pt: +{killPoints} RP</span>

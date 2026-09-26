@@ -460,12 +460,6 @@ export const useGameStore = create<StoreState>((set, get) => ({
               delete mergedPlayers[pid];
             }
           }
-        } else if (state.players) {
-          for (const pid in prev.gameState.players) {
-            if (!(pid in state.players)) {
-              delete mergedPlayers[pid];
-            }
-          }
         }
 
         return {
