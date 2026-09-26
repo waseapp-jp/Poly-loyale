@@ -660,7 +660,7 @@ export function FirebaseAccount({ onUserLoaded }: Props) {
             ) : (
               <div className="space-y-2 max-h-80 overflow-y-auto pr-1 allow-scroll">
                 {leaderboard.map((entry, idx) => {
-                  const entryRating = entry.rating ?? 2000;
+                  const entryRating = typeof entry.rating === 'number' && Number.isFinite(entry.rating) ? Math.round(entry.rating) : 0;
                   const tier = getRankTier(entryRating);
                   const config = RANK_CONFIGS[tier];
 

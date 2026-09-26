@@ -31,9 +31,10 @@ html, body, #root {
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
 }
-.allow-scroll {
+.allow-scroll, .allow-scroll *, .overflow-y-auto, .overflow-y-auto *, .overflow-auto, .overflow-auto * {
   touch-action: pan-y !important;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 .allow-scroll-x, .allow-scroll-x *, .overflow-x-auto, .overflow-x-auto * {

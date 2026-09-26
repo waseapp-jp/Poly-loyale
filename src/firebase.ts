@@ -267,15 +267,21 @@ export async function fetchTopLeaderboard(): Promise<LeaderboardEntryData[]> {
   try {
     let snap;
     try {
-      const q = query(collection(db, 'leaderboard'), orderBy('rating', 'desc'), limit(15));
+      const q = query(collection(db, 'leaderboard'), orderBy('rating', 'desc'), limit(30));
       snap = await getDocs(q);
     } catch {
-      const q = query(collection(db, 'leaderboard'), limit(30));
+      const q = query(collection(db, 'leaderboard'), limit(50));
       snap = await getDocs(q);
     }
     const entries = snap.docs.map(d => d.data() as LeaderboardEntryData);
-    entries.sort((a, b) => (b.rating ?? 2000) - (a.rating ?? 2000));
-    return entries.slice(0, 15);
+    entries.sort((a, b) => {
+      const rA = typeof a.rating === 'number' && Number.isFinite(a.rating) ? a.rating : 0;
+      const rB = typeof b.rating === 'number' && Number.isFinite(b.rating) ? b.rating : 0;
+      if (rB !== rA) return rB - rA;
+      if ((b.totalWins || 0) !== (a.totalWins || 0)) return (b.totalWins || 0) - (a.totalWins || 0);
+      return (b.totalKills || 0) - (a.totalKills || 0);
+    });
+    return entries.slice(0, 25);
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, lbPath);
     return [];

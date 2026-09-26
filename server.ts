@@ -1811,7 +1811,7 @@ async function startServer() {
               const id = Math.random().toString(36).substring(2);
               room.items[id] = {
                 id,
-                type: Math.random() < 0.05 ? 'weapon' : 'heal',
+                type: Math.random() < 0.35 ? 'weapon' : 'heal',
                 x: (Math.random() - 0.5) * MAP_SIZE,
                 y: 1,
                 z: (Math.random() - 0.5) * MAP_SIZE,
