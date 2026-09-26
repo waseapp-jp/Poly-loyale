@@ -1806,8 +1806,8 @@ async function startServer() {
             room.bombs = {};
             room.winner = null;
 
-            // Drastically reduced map spawn: only 8 items across the entire 200x200 arena
-            for (let i = 0; i < 8; i++) {
+            // Balanced map spawn: 40 items across the 200x200 arena
+            for (let i = 0; i < 40; i++) {
               const id = Math.random().toString(36).substring(2);
               room.items[id] = {
                 id,
